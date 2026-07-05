@@ -1,0 +1,6 @@
+# Deploy: direct deploy della sola cartella statica dist/.
+# In locale: npm run build && netlify deploy --prod --dir=dist --site=<siteId>
+# publish/command qui sotto valgono anche come fallback per eventuali build lato Netlify.
+[build]
+  command = "npm run build"
+  publish = "dist"

@@ -1,0 +1,23 @@
+# Dipendenze
+node_modules/
+
+# Build output (rigenerato da zen-deployer, non versionato)
+dist/
+
+# Cache Vite
+.vite/
+node_modules/.vite/
+
+# File d'ambiente locali
+.env
+.env.local
+.env.*.local
+
+# Log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
