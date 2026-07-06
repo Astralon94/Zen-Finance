@@ -236,54 +236,67 @@ async function openBankImport() {
   // della scelta del file e l'evento change non scatta → "non succede nulla".
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.xls,.xlsx,.csv,.tsv,.xml';
+  input.multiple = true;                 // più estratti conto insieme (un conto per file)
   input.style.display = 'none';
   document.body.appendChild(input);
   const cleanup = () => { input.remove(); };
-  input.onchange = async () => {
-    const f = input.files[0];
-    if (!f) { cleanup(); return; }
-    toast('Lettura file…');
-    try {
-      const isXml = /\.xml$/i.test(f.name) || looksLikeBankXml(await f.text());
-      if (isXml) {
-        const parsed = parseBankXml(await f.text());
-        cleanup();
-        if (!parsed || !parsed.rows.length) { toast('XML bancario non riconosciuto'); return; }
-        openBankPreview(parsed.rows, parsed.iban);
-      } else {
-        const matrix = await readMatrix(f);
-        cleanup();
-        if (!matrix || matrix.length < 2) { toast('File vuoto o non riconosciuto'); return; }
-        openMappingSheet(matrix);
-      }
-    } catch (e) { cleanup(); toast('Errore lettura: ' + e.message); }
+  input.onchange = () => {
+    const files = [...input.files].filter(f => /\.(xml|xls|xlsx|csv|tsv)$/i.test(f.name));
+    cleanup();
+    if (files.length) processBankQueue(files, 0);
   };
   // se l'utente annulla il dialog, rimuovi comunque l'input
   window.addEventListener('focus', () => setTimeout(() => { if (!input.files.length) cleanup(); }, 800), { once: true });
   input.click();
 }
 
+// Elabora una coda di estratti conto UNO ALLA VOLTA: ogni file ha il suo conto di
+// destinazione (l'utente lo sceglie nell'anteprima). Al termine di uno passa al successivo.
+async function processBankQueue(files, i) {
+  if (i >= files.length) { if (files.length > 1) toast('Import estratti conto completato'); return; }
+  const f = files[i];
+  const next = () => processBankQueue(files, i + 1);
+  const label = files.length > 1 ? ` · ${i + 1}/${files.length}` : '';
+  toast('Lettura file…');
+  try {
+    const text = await f.text();
+    const isXml = /\.xml$/i.test(f.name) || looksLikeBankXml(text);
+    if (isXml) {
+      const parsed = parseBankXml(text);
+      if (!parsed || !parsed.rows.length) { toast('XML non riconosciuto: ' + f.name); return next(); }
+      openBankPreview(parsed.rows, parsed.iban, f.name, label, next);
+    } else {
+      const matrix = await readMatrix(f);
+      if (!matrix || matrix.length < 2) { toast('File vuoto: ' + f.name); return next(); }
+      openMappingSheet(matrix, f.name, label, next);
+    }
+  } catch (e) { toast('Errore lettura ' + f.name + ': ' + e.message); next(); }
+}
+
 // anteprima per XML bancario (nessuna mappatura: dati già strutturati)
-function openBankPreview(rows, iban) {
+// fileName/label/next servono all'import multiplo (coda): "Salta" o "Importa" passano al file successivo.
+function openBankPreview(rows, iban, fileName = '', label = '', next = () => {}) {
   const accId = data.accounts.find(a => a.companyId === activeCompany())?.id || data.accounts[0]?.id;
+  const queued = label !== '';
   const body = rows.slice(0, 8).map(r => `<tr><td>${fmtDateFull(r.date)}</td><td>${esc(r.desc.slice(0, 44))}</td><td class="r tnum ${r.amount < 0 ? 'neg' : 'pos'}">${fmt(r.amount)}</td></tr>`).join('');
   openSheet(`
-    <h2>Importa estratto conto (XML)</h2>
-    <div class="sheetsub">${rows.length} movimenti rilevati${iban ? ' · ' + esc(iban) : ''}</div>
+    <h2>Importa estratto conto${label}</h2>
+    <div class="sheetsub">${fileName ? esc(fileName) + ' · ' : ''}${rows.length} movimenti${iban ? ' · ' + esc(iban) : ''}</div>
     <div class="field"><label>Conto di destinazione</label><select id="bx_acc">${accountOptions(null, accId)}</select></div>
     <div class="section-title">Anteprima</div>
     <div style="max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
       <table class="tbl"><thead><tr><th>Data</th><th>Descrizione</th><th class="r">Importo</th></tr></thead><tbody>${body}</tbody></table>
     </div>
-    <div class="actions"><button class="btn" data-cancel>Annulla</button><button class="btn primary" data-import>Importa ${rows.length}</button></div>`,
+    <div class="actions"><button class="btn" data-cancel>${queued ? 'Salta' : 'Annulla'}</button><button class="btn primary" data-import>Importa ${rows.length}</button></div>`,
     sheet => {
-      sheet.querySelector('[data-cancel]').onclick = closeSheet;
+      sheet.querySelector('[data-cancel]').onclick = () => { closeSheet(); next(); };
       sheet.querySelector('[data-import]').onclick = () => {
         const accId = sheet.querySelector('#bx_acc').value;
         closeSheet();
         filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
         const r = commitBankRows(rows, accId);
         toast(`${r.added} movimenti importati${r.skipped ? ` · ${r.skipped} duplicati` : ''}`);
+        next();
       };
     });
 }
@@ -294,15 +307,16 @@ function colOptions(headers, ncol, sel) {
   return o;
 }
 
-function openMappingSheet(matrix) {
+function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
   const det = detect(matrix);
   const accId = data.accounts.find(a => a.companyId === activeCompany())?.id || data.accounts[0]?.id;
   const m = { headerRow: det.headerRow, ...det.suggestion, invert: false };
+  const queued = label !== '';
 
   const optNone = (sel) => `<option value="-1" ${sel == null || sel < 0 ? 'selected' : ''}>—</option>`;
   const html = `
-    <h2>Importa estratto conto</h2>
-    <div class="sheetsub">Verifica la mappatura delle colonne, poi importa.</div>
+    <h2>Importa estratto conto${label}</h2>
+    <div class="sheetsub">${fileName ? esc(fileName) + ' · ' : ''}Verifica la mappatura delle colonne, poi importa.</div>
     <div class="field"><label>Conto di destinazione</label><select id="bk_acc">${accountOptions(null, accId)}</select></div>
     <div class="frow">
       <div class="field"><label>Colonna data</label><select id="bk_date">${colOptions(det.headers, det.ncol, m.dateCol)}</select></div>
@@ -318,7 +332,7 @@ function openMappingSheet(matrix) {
     <div class="field"><label><input type="checkbox" id="bk_inv"> Inverti il segno degli importi</label></div>
     <div class="section-title">Anteprima</div>
     <div id="bk_preview" style="max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
-    <div class="actions"><button class="btn" data-cancel>Annulla</button><button class="btn primary" data-import>Importa</button></div>`;
+    <div class="actions"><button class="btn" data-cancel>${queued ? 'Salta' : 'Annulla'}</button><button class="btn primary" data-import>Importa</button></div>`;
 
   openSheet(html, sheet => {
     const g = x => sheet.querySelector(x);
@@ -347,7 +361,7 @@ function openMappingSheet(matrix) {
     g('#bk_inv').onchange = () => { m.invert = g('#bk_inv').checked; preview(); };
     sheet.querySelectorAll('#bk_mode [data-m]').forEach(b => b.onclick = () => { m.amountMode = b.dataset.m; sheet.querySelectorAll('#bk_mode .chip').forEach(c => c.classList.toggle('on', c.dataset.m === m.amountMode)); amountFields(); preview(); });
     amountFields(); preview();
-    g('[data-cancel]').onclick = closeSheet;
+    g('[data-cancel]').onclick = () => { closeSheet(); next(); };
     g('[data-import]').onclick = () => {
       const rows = sheet._rows || buildRows(matrix, m);
       if (!rows.length) { toast('Nessuna riga da importare'); return; }
@@ -356,6 +370,7 @@ function openMappingSheet(matrix) {
       filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
       const r = commitBankRows(rows, accId);
       toast(`${r.added} movimenti importati${r.skipped ? ` · ${r.skipped} duplicati` : ''}`);
+      next();
     };
   });
 }

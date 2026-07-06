@@ -143,8 +143,9 @@ export function render() {
       <div>Trascina qui i file oppure <b>scegli</b></div>
       <div class="muted" style="font-size:12.5px;margin-top:6px">.xml · .p7m firmati · archivi .zip — singoli o multipli</div>
       <input type="file" id="fileInput" accept=".xml,.p7m,.zip" multiple style="display:none">
+      <input type="file" id="dirInput" webkitdirectory style="display:none">
     </div>`;
-  h += `<div class="btnrow" style="margin:12px 0"><button class="btn primary" data-newinv>+ Fattura manuale</button></div>`;
+  h += `<div class="btnrow" style="margin:12px 0"><button class="btn" data-impdir>📁 Importa cartella…</button><button class="btn primary" data-newinv>+ Fattura manuale</button></div>`;
 
   // ---- filtri ----
   const years = yearsAvailable();
@@ -265,6 +266,17 @@ export function bind(root) {
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', e => { const f = e.dataTransfer?.files; if (f && f.length) handleImport(f); });
+
+  // Importa un'intera cartella (es. lo scarico InfoCamere, con sottocartelle per fattura):
+  // prende ricorsivamente tutti gli .xml/.p7m/.zip e ignora PDF/allegati/altro.
+  const dirInput = root.querySelector('#dirInput');
+  root.querySelector('[data-impdir]').onclick = () => dirInput.click();
+  dirInput.onchange = () => {
+    const files = [...dirInput.files].filter(f => /\.(xml|p7m|zip)$/i.test(f.name));
+    dirInput.value = '';
+    if (files.length) handleImport(files);
+    else toast('Nessun file .xml/.p7m/.zip nella cartella');
+  };
 }
 
 // ---- import flow ----
