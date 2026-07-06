@@ -36,17 +36,7 @@ button { cursor: pointer; border: none; background: none; }
 }
 .topbar .brand { font-weight: 600; letter-spacing: .2px; font-size: 16px; }
 .topbar .spacer { flex: 1; }
-/* badge stato vault: ultimo snapshot / ultimo backup, accanto al brand */
-.snapbadge {
-  display: inline-flex; gap: 9px; align-items: center;
-  padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--card2); line-height: 1.15;
-}
-.snapbadge .sb-item { display: inline-flex; gap: 5px; align-items: baseline; }
-.snapbadge .sb-k { color: var(--sub); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
-.snapbadge .sb-v { color: var(--txt); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
-.snapbadge .sb-v.none { color: var(--faint); font-weight: 600; }
-.snapbadge .sb-sep { width: 1px; height: 13px; background: var(--line); align-self: center; }
+.savebadge { display: inline-flex; align-items: center; }
 .selbox {
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   padding: 7px 30px 7px 11px; appearance: none; max-width: 46vw; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
@@ -99,15 +89,6 @@ button { cursor: pointer; border: none; background: none; }
 .row.review { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .row.todo { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sub) 50%, transparent); }
 .card.manualpay { box-shadow: inset 3px 0 0 var(--orange); }
-
-/* schermata bloccante: cartella dati obbligatoria */
-.gate { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.gate-card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 12px 44px rgba(0,0,0,.12); padding: 36px 32px; max-width: 440px; width: 100%; text-align: center; }
-.gate-icon { display: block; margin: 0 auto 18px; border-radius: 16px; box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 38%, transparent); }
-.gate-card h1 { margin: 0 0 14px; font-size: 24px; letter-spacing: -.3px; }
-.gate-card p { color: var(--sub); font-size: 14px; line-height: 1.6; margin: 0 0 18px; }
-.gate-card p.muted { margin: 16px 0 0; font-size: 12.5px; }
-.gate-card .btn { width: 100%; padding: 12px; font-size: 15px; }
 
 /* combobox fornitore con ricerca */
 .combo { position: relative; }
@@ -174,8 +155,6 @@ button { cursor: pointer; border: none; background: none; }
   .sheet.show { transform: translate(-50%, 0); }
   .grid.k4 { grid-template-columns: repeat(2, 1fr); } .grid.k3 { grid-template-columns: repeat(2, 1fr); }
   .topbar .brand { display: none; }
-  .snapbadge { padding: 3px 9px; gap: 7px; }
-  .snapbadge .sb-k { display: none; }
 }
 
 /* ---- toast ---- */

@@ -179,7 +179,7 @@ export function bind(root) {
       if (!f) return;
       toast('Caricamento…');
       const r = await addAttachment(f);
-      if (!r.ok) { toast(r.reason === 'no-vault' ? 'Collega prima una cartella dati' : 'Caricamento non riuscito'); return; }
+      if (!r.ok) { toast('Caricamento allegato non riuscito'); return; }
       loan.attachments = (loan.attachments || []).concat(r.meta);
       save(); toast('Allegato aggiunto ✓');
     };
