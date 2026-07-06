@@ -1,7 +1,7 @@
 {
   "name": "Zen Finance",
   "short_name": "Zen Finance",
-  "description": "Spese e fatture passive, offline-first e 100% locale",
+  "description": "Spese e fatture passive · database locale (server)",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

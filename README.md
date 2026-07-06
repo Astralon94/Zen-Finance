@@ -1,8 +1,13 @@
-# Zen Finance
+# Zen Finance — versione server (sperimentale)
 
-App di contabilità **offline-first, 100% locale** (ex *Inconty* / *Credit Business*). Niente cloud,
-niente Fatture in Cloud, niente backend. I dati vivono in una cartella sul disco (File System Access
-di Chrome), obbligatoria; il browser ne tiene una copia interna come rete di sicurezza.
+App di contabilità **100% locale** (ex *Inconty* / *Credit Business*). Niente cloud,
+niente Fatture in Cloud, niente account.
+
+> **Variante `-server`.** A differenza dell'originale (Vite + File System Access API,
+> solo Chrome), questa versione gira su un **server locale Node** (`node:http`) con un
+> **database relazionale `node:sqlite`** (zero dipendenze a runtime). Il frontend resta
+> la stessa SPA, ma persiste via API (`/api/data`) invece che su cartella del disco.
+> I dati vivono nel file `data/zenfinance.db`, con backup automatici in `data/backups/`.
 
 ## Cosa fa
 
@@ -29,61 +34,66 @@ di Chrome), obbligatoria; il browser ne tiene una copia interna come rete di sic
 
 **Programmati** (scadenziario, sezione propria)
 - Movimenti futuri previsti, divisi in **Addebiti** e **Accrediti**, con data e flag **Manuale** evidenziato (es. affitto da pagare a mano).
-- **Raggruppati per periodo** (Scadute, Oggi, Questa settimana, Settimana prossima, Questo mese, Più avanti) con subtotale per gruppo, per una panoramica immediata.
+- **Raggruppati per periodo** (Scadute, Oggi, Questa settimana, Settimana prossima, Questo mese, Più avanti) con subtotale per gruppo.
 - Include automaticamente anche le **rate dei finanziamenti** (badge "finanz."): scadenziario unico.
-- Riepilogo addebiti/accrediti previsti e saldo previsto; scaduti evidenziati.
-- Completamento: **crea il movimento reale**, **abbina a un movimento già presente** (stile riconciliazione, es. RID da estratto conto) oppure **segna solo completato**. Riapribile.
+- Completamento: **crea il movimento reale**, **abbina a un movimento già presente** oppure **segna solo completato**. Riapribile.
 
 **Finanziamenti** (sezione propria)
 - Schede per mutui, prestiti, leasing: ente/banca, debito totale, date inizio/scadenza, collegate a **azienda** e **conto**.
-- **Piano rate** generabile (numero rate, importo, prima scadenza, frequenza in mesi) **oppure inserito/modificato a mano** rata per rata (importi e date non omogenei).
-- Tracciamento rate: paga creando il movimento, abbinando un movimento esistente (riconciliazione) o segnando solo pagata; residuo, pagato, prossima rata e rate scadute evidenziate.
+- **Piano rate** generabile oppure inserito/modificato a mano rata per rata (importi e date non omogenei).
+- Tracciamento rate: paga creando il movimento, abbinando un movimento esistente o segnando solo pagata; residuo, pagato, prossima rata e rate scadute evidenziate.
+- *(Allegati alle rateizzazioni: in arrivo nella versione server — BLOB nel DB.)*
 
 **Banca**
-- **Import estratto conto**: XML bancario **CBI/camt** (consigliato, importi e segno affidabili, un clic) e `.xls/.xlsx/.csv/.tsv` con auto-rilevamento colonne e anteprima di mappatura. Dedup e conto di destinazione; i `.xls` testuali (TSV) sono letti rispettando il formato numerico italiano.
-- **Riconciliazione**: abbina le uscite (importate o "in attesa di fattura") alle fatture con conferma manuale, anche **un movimento ↔ più fatture** (bonifico unico che salda più fatture); sezione "Da riconciliare" in Movimenti.
-- **Regole** di categorizzazione automatica: da parola chiave nella descrizione impostano categoria, fornitore e nome visualizzato; applicate all'import e riapplicabili. Creabili al volo con **"Crea regola da questo movimento"**.
+- **Import estratto conto**: XML bancario **CBI/camt** e `.xls/.xlsx/.csv/.tsv` con auto-rilevamento colonne e anteprima di mappatura. Dedup e conto di destinazione.
+- **Riconciliazione**: abbina le uscite alle fatture con conferma manuale, anche **un movimento ↔ più fatture**.
+- **Regole** di categorizzazione automatica da parola chiave; applicate all'import e riapplicabili. Creabili al volo con **"Crea regola da questo movimento"**.
 
-**Altro**: tema chiaro/scuro, backup/ripristino JSON, installabile come PWA.
-- **Cartella dati / vault (Chrome)**: se usata come app installata in Chrome, può collegare una cartella su disco (anche iCloud/Dropbox) in cui salva tutto automaticamente: `inconty.json` (snello), gli XML delle fatture in `xml/`, più `backups/` a rotazione e `snapshots/` giornalieri ripristinabili dalle Impostazioni. La copia nel browser resta come rete di sicurezza; al boot vince la copia con `rev` più alto. Dove l'API non c'è (Safari/iPhone) resta lo storage del browser + export/import.
-- **Badge sull'icona**: numero totale di scadute (fatture, programmati, rate finanziamenti) sull'icona dell'app installata.
+**Altro**: tema chiaro/scuro, **backup/ripristino JSON** dalle Impostazioni.
 
 ## Architettura
-Sorgenti modulari in `src/`, build in un **unico `index.html` self-contained** (tutto JS/CSS
-inlinato) → gira offline anche da file locale ed è installabile come PWA quando servito.
+
+Server Node (zero dipendenze a runtime) + SPA. Il frontend resta modulare in `src/`,
+buildato con Vite in un **`index.html` self-contained** servito dal server da `public/`.
 
 ```
-src/
-  state/     model.js (dati+migrazioni), store.js (persistenza)
-  domain/    util.js, finance.js (conti/P&L/etichette), invoices.js (stato fatture),
-             rules.js (regole), reconcile.js (riconciliazione), scheduled.js (programmati), loans.js (finanziamenti)
-  importers/ fatturapa.js, p7m.js, index.js (xml/p7m/zip), commit.js,
-             bankxls.js (estratto .xls/.csv), bankxml.js (CBI/camt)
-  ui/        app.js (shell+router), ruleeditor.js, forms.js, dom.js, styles.css,
-             views/ (dashboard, movimenti, fatture, pagamenti, f24, programmati, finanziamenti, pnl, anagrafiche, impostazioni, xmlview)
+server.js          server node:http — statico da public/ + API /api
+server/
+  schema.js        specifica tabelle (colonne indicizzate + doc JSON verbatim)
+  db.js            connessione node:sqlite, WAL + foreign_keys, DDL, backup
+  serialize.js     import/export DB ⇄ modello app (transazionale, lossless)
+scripts/           reset.mjs, roundtrip.mjs (test d'integrità)
+src/               frontend (invariato salvo state/store.js → API)
+  state/     model.js (dati+migrazioni), store.js (persistenza via /api/data)
+  domain/    util, finance, invoices, rules, reconcile, scheduled, loans
+  importers/ fatturapa, p7m, index (xml/p7m/zip), commit, bankxls, bankxml
+  ui/        app.js (shell+router), views/ (dashboard, movimenti, fatture, …)
+data/              zenfinance.db (+ backups/) — NON versionato
 ```
 
-## Persistenza robusta
-Fonte di verità in memoria; due copie durevoli: **localStorage + IndexedDB**. Ogni salvataggio
-incrementa un contatore `rev` monotòno: al boot si adotta **sempre** la copia con `rev` più alto.
-Niente euristiche "a conteggio record" → nessun ripristino di dati vecchi per sbaglio.
+## Persistenza e integrità
+Fonte di verità: il **DB SQLite** del server. Modello **ibrido documento-relazionale**:
+ogni entità ha colonne tipizzate/indicizzate per le query **più** una colonna `doc` con il
+JSON verbatim → l'export ricostruito dal `doc` è **lossless per costruzione**. `WAL` +
+`foreign_keys`, import **transazionale all-or-nothing** con **backup del DB prima**,
+contatore `rev` **monotòno** (non torna mai indietro).
 
 ## Stato fatture (anti cambi involontari)
 Si memorizzano **solo fatti**: `total`, `withholding`, `payments[]`. Lo stato
 (`da pagare` / `parziale` / `pagata` / `scaduta`) e il residuo sono **calcolati**, mai salvati.
-Migrazione e import eliminano ogni vecchio campo `status` memorizzato. Registrare un pagamento
-su un conto crea un movimento di uscita collegato (saldi e P&L coerenti); rimuoverlo lo elimina.
 
 ## Comandi
 ```bash
-npm install      # dipendenze (solo build)
-npm run dev      # sviluppo con hot-reload
-npm run build    # genera dist/index.html (app da usare/distribuire)
-npm run preview  # anteprima della build
+npm install          # dipendenze SOLO di build (vite, xlsx, fflate)
+npm run build        # builda il frontend → public/index.html
+npm start            # avvia il server → http://localhost:4331
+npm run reset-db     # riporta il DB ai dati di default (con backup)
+npm run test:roundtrip  # test d'integrità import/export (in memoria)
 ```
 
-## Uso / deploy (web app)
-Apri **`dist/index.html`**. Per la PWA installabile e il service worker servila via HTTP
-(qualsiasi static server: `npm run preview`, `python -m http.server`, il Raspberry Pi, ecc.).
-Su macOS/iOS puoi installarla come app da Safari → *Aggiungi al Dock* / *Aggiungi a Home*.
-Per backup o trasferimento dati: Impostazioni → *Esporta backup* / *Importa backup* (JSON).
+## Uso
+1. `npm install && npm run build` (la prima volta, e dopo ogni modifica al frontend)
+2. `npm start` → apri **http://localhost:4331**
+
+Backup/trasferimento dati: Impostazioni → *Esporta backup* / *Importa backup* (JSON),
+compatibile con l'export dell'app originale.

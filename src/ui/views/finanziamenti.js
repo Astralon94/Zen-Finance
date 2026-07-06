@@ -97,7 +97,7 @@ function attachmentsBlock(l) {
   if (attachmentsReady()) {
     h += `<div class="btnrow" style="margin-top:10px"><button class="btn" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" style="display:none"></div>`;
   } else {
-    h += `<div class="card empty" style="padding:18px">Collega una cartella dati (Impostazioni → Cartella dati) per allegare file alle rateizzazioni.</div>`;
+    h += `<div class="card empty" style="padding:18px">Allegati non ancora disponibili in questa versione server (in arrivo).</div>`;
   }
   return h;
 }

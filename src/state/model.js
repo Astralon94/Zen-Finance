@@ -28,7 +28,7 @@ export const DEFAULT_DATA = () => ({
   scheduled: [],
   // rateizzazioni: {id,companyId,accountId,name,type,lender,totalDebt,startDate,endDate,categoryId,notes,paymentMethod,
   //   installments:[{id,n,date,amount,status:'pending'|'paid',paidDate,txId}],
-  //   attachments:[{id,name,size,type,addedAt,file}] (i binari stanno in allegati/ del vault),createdAt}
+  //   attachments:[{id,name,size,type,addedAt,file}] (in modalità server i binari andranno in BLOB nel DB),createdAt}
   loans: [],
   // storico eventi fatture (append-only, ultimi 500): {id,at,companyId,type,label,amount,account}
   log: []

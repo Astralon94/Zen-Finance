@@ -57,7 +57,7 @@ export function addLoan(rec) { const l = { id: uid(), installments: [], attachme
 export function updateLoan(l, rec) { Object.assign(l, rec); save(); }
 export function deleteLoan(l) {
   insts(l).forEach(i => { if (i.txId) { const tx = data.transactions.find(t => t.id === i.txId); if (tx && tx.fromLoan) data.transactions = data.transactions.filter(t => t.id !== i.txId); else if (tx) { delete tx.loanId; delete tx.instId; } } });
-  (l.attachments || []).forEach(a => { deleteAttachment(a).catch(() => {}); }); // rimuove i file dal vault (best-effort)
+  (l.attachments || []).forEach(a => { deleteAttachment(a).catch(() => {}); }); // allegati: gestione binari rinviata alla fase server (no-op)
   data.loans = data.loans.filter(x => x.id !== l.id); save();
 }
 

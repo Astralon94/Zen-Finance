@@ -235,7 +235,7 @@ export function deleteInvoice(inv) {
   logEvent('invoice_deleted', { companyId: inv.companyId, label: evLabel(inv), amount: invTotal(inv) });
   data.invoices = data.invoices.filter(x => x.id !== inv.id);
   linkedTxIds.forEach(refreshInvName); // aggiorna/ripristina il nome dei movimenti non più abbinati
-  if (inv.source === 'xml') deleteXmlFile(inv.id); // rimuove l'XML orfano dalla cartella (best-effort)
+  if (inv.source === 'xml') deleteXmlFile(inv.id); // XML ora nel DB (doc fattura): no-op in modalità server
   save();
 }
 

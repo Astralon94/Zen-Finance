@@ -1,5 +1,6 @@
 // ============ Visualizzatore XML fattura (nuova scheda) ============
 import { esc } from '../../domain/util.js';
+import { getInvoiceXml } from '../../state/store.js';
 
 const all = (root, name) => root ? [...root.getElementsByTagName('*')].filter(e => e.localName === name) : [];
 const one = (root, name) => all(root, name)[0] || null;
@@ -7,12 +8,20 @@ const tx = (root, name) => { const e = one(root, name); return e ? e.textContent
 const money = v => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? (v || '') : n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const dt = v => { if (!v) return ''; const p = v.slice(0, 10).split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}/${p[0]}` : v; };
 
-export function openXmlViewer(xmlStr) {
+// id = id fattura (per il lazy-load dal server); inMemoryXml = xml già in memoria (fatture
+// appena importate in questa sessione), se presente si evita il fetch.
+export async function openXmlViewer(id, inMemoryXml) {
   const w = window.open('', '_blank');
   if (!w) { alert('Consenti i popup per vedere la fattura'); return; }
+  const notice = (msg) => { w.document.open(); w.document.write(`<meta charset="utf-8"><p style="font:14px system-ui;padding:24px;color:#555">${msg}</p>`); w.document.close(); };
+  notice('Caricamento fattura…');
+  let xmlStr = inMemoryXml;
+  if (!xmlStr) xmlStr = await getInvoiceXml(id);
+  if (!xmlStr) { notice('XML non disponibile per questa fattura.'); return; }
   let doc = null;
   try { doc = new DOMParser().parseFromString(xmlStr, 'application/xml'); } catch (e) {}
   if (!doc || doc.getElementsByTagName('parsererror').length) {
+    w.document.open();
     w.document.write('<meta charset="utf-8"><pre style="white-space:pre-wrap;font:13px system-ui;padding:16px">' + esc(xmlStr) + '</pre>');
     w.document.close(); return;
   }
@@ -40,5 +49,5 @@ export function openXmlViewer(xmlStr) {
     <div class="tot">Totale documento: ${esc(money(totDoc))} €</div>
     <p class="noprint muted" style="margin-top:18px">Vista generata dall'XML. Usa Stampa del browser per salvarla in PDF.</p>
   </body></html>`;
-  w.document.write(html); w.document.close();
+  w.document.open(); w.document.write(html); w.document.close();
 }

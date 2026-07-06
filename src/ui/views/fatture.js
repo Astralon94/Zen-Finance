@@ -329,14 +329,14 @@ export function openInvoice(id) {
     <div class="btnrow" style="margin-top:12px">
       ${res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
       ${res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
-      ${i.xml ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
+      ${i.source === 'xml' ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
       <button class="btn" data-edit>Modifica</button>
     </div>
     <div class="muted" style="font-size:11.5px;margin-top:8px">Per eliminare una fattura: Impostazioni → "Elimina una fattura". (Qui puoi rimuovere i singoli pagamenti senza toccare la fattura.)</div>`, sheet => {
     sheet.querySelectorAll('[data-delpay]').forEach(b => b.onclick = () => { removePayment(i, b.dataset.delpay); toast('Pagamento rimosso'); openInvoice(id); });
     sheet.querySelector('[data-flag]')?.addEventListener('click', () => { toggleToPay(i); openInvoice(id); });
     sheet.querySelector('[data-settle]')?.addEventListener('click', () => openSettleInvoice(i));
-    sheet.querySelector('[data-xml]')?.addEventListener('click', () => openXmlViewer(i.xml));
+    sheet.querySelector('[data-xml]')?.addEventListener('click', () => openXmlViewer(i.id, i.xml));
     sheet.querySelector('[data-edit]').onclick = () => openInvoiceEditor(id);
   });
 }
