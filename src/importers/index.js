@@ -57,11 +57,13 @@ export async function importFiles(files) {
           if (!en || en.startsWith('.') || en.startsWith('__MACOSX')) continue;
           const ee = ext(en);
           if (ee !== 'xml' && ee !== 'p7m') continue;
-          try { drafts.push(draftFromBytes(en, bytes)); }
+          try { const d = draftFromBytes(en, bytes); d.path = `${file.name}/${entryName}`; drafts.push(d); }
           catch (err) { errors.push({ name: en, msg: err.message }); }
         }
       } else {
-        drafts.push(draftFromBytes(file.name, u8));
+        const d = draftFromBytes(file.name, u8);
+        d.path = file._path || file.webkitRelativePath || file.name; // per agganciare gli allegati per cartella
+        drafts.push(d);
       }
     } catch (err) {
       errors.push({ name: file.name, msg: err.message });

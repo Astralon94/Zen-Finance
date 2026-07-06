@@ -1,5 +1,5 @@
 // ============ Da draft import → fatture nello store ============
-import { data, save } from '../state/store.js';
+import { data, save, addAttachment } from '../state/store.js';
 import { uid, round2, todayStr } from '../domain/util.js';
 
 function norm(s) { return (s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -32,13 +32,15 @@ function existingKey(inv) {
 }
 
 // drafts: array da importFiles; companyId: azienda di destinazione.
-export function commitDrafts(drafts, companyId) {
+// I draft possono portare d.attachFiles[] (PDF dalla cartella): vengono caricati come BLOB
+// e agganciati alla fattura (inv.attachments[]). È async per via dell'upload degli allegati.
+export async function commitDrafts(drafts, companyId) {
   const existing = new Set(data.invoices.map(existingKey));
-  let added = 0, skipped = 0;
+  let added = 0, skipped = 0, attached = 0;
   const addedInvoices = [];
 
-  drafts.forEach(d => {
-    if (existing.has(d.dedupKey)) { skipped++; return; }
+  for (const d of drafts) {
+    if (existing.has(d.dedupKey)) { skipped++; continue; }
     const supId = findOrCreateSupplier(d);
     const inv = {
       id: uid(), companyId,
@@ -46,15 +48,20 @@ export function commitDrafts(drafts, companyId) {
       number: d.number || '', date: d.date || todayStr(), due: d.due || null,
       net: d.net ?? null, vat: d.vat ?? null, total: round2(d.total), withholding: round2(d.withholding || 0),
       creditNote: !!d.creditNote,
-      categoryId: 'c-for', payments: [], source: 'xml', xml: d.xml || null,
+      categoryId: 'c-for', payments: [], attachments: [], source: 'xml', xml: d.xml || null,
       note: '', createdAt: Date.now()
     };
+    // allegati PDF trovati nella cartella della fattura → upload BLOB + metadati nel doc
+    for (const f of (d.attachFiles || [])) {
+      const r = await addAttachment(f);
+      if (r.ok) { inv.attachments.push(r.meta); attached++; }
+    }
     data.invoices.push(inv);
     addedInvoices.push(inv);
     existing.add(d.dedupKey);
     added++;
-  });
+  }
 
   if (added) save();
-  return { added, skipped, addedInvoices };
+  return { added, skipped, attached, addedInvoices };
 }

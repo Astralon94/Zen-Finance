@@ -1,5 +1,5 @@
 // ============ Vista Fatture passive ============
-import { data, save } from '../../state/store.js';
+import { data, save, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, uid, MESI } from '../../domain/util.js';
 import { activeCompany, co, sup, acc, txLabel } from '../../domain/finance.js';
 import {
@@ -9,7 +9,7 @@ import {
   isToPay, toggleToPay, flagMany, isCreditNote, invSignedResiduo, linkBankTx
 } from '../../domain/invoices.js';
 import { movementCandidates, searchMovements } from '../../domain/reconcile.js';
-import { openSheet, closeSheet, toast, printDocument } from '../dom.js';
+import { openSheet, closeSheet, toast, printDocument, confirmDialog } from '../dom.js';
 import { recentEvents, EVENT_VERB, LOG_CAP } from '../../domain/auditlog.js';
 import { companyOptions, accountOptions, categoryOptions, supplierOptions, supplierPicker, bindCombos } from '../forms.js';
 import { importFiles } from '../../importers/index.js';
@@ -262,47 +262,94 @@ export function bind(root) {
   const drop = root.querySelector('#drop');
   const input = root.querySelector('#fileInput');
   drop.onclick = () => input.click();
-  input.onchange = () => { if (input.files.length) handleImport(input.files); input.value = ''; };
+  input.onchange = () => { routeImport([...input.files]); input.value = ''; };
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', e => { const f = e.dataTransfer?.files; if (f && f.length) handleImport(f); });
+  // supporta anche il trascinamento di intere CARTELLE (ricorsivo, con i PDF allegati dentro)
+  drop.addEventListener('drop', async e => { const all = await filesFromDataTransfer(e.dataTransfer); routeImport(all); });
 
   // Importa un'intera cartella (es. lo scarico InfoCamere, con sottocartelle per fattura):
-  // prende ricorsivamente tutti gli .xml/.p7m/.zip e ignora PDF/allegati/altro.
+  // gli .xml/.p7m/.zip diventano fatture; i PDF nella stessa cartella-fattura ne diventano allegati.
   const dirInput = root.querySelector('#dirInput');
   root.querySelector('[data-impdir]').onclick = () => dirInput.click();
-  dirInput.onchange = () => {
-    const files = [...dirInput.files].filter(f => /\.(xml|p7m|zip)$/i.test(f.name));
-    dirInput.value = '';
-    if (files.length) handleImport(files);
-    else toast('Nessun file .xml/.p7m/.zip nella cartella');
-  };
+  dirInput.onchange = () => { routeImport([...dirInput.files]); dirInput.value = ''; };
 }
 
 // ---- import flow ----
-async function handleImport(files) {
+// Smista i file scelti/trascinati: .xml/.p7m/.zip → fatture; .pdf → potenziali allegati.
+function routeImport(all) {
+  const invoiceFiles = all.filter(f => /\.(xml|p7m|zip)$/i.test(f.name));
+  const attachFiles = all.filter(f => /\.pdf$/i.test(f.name));
+  if (!invoiceFiles.length) { toast('Nessun file .xml/.p7m/.zip da importare'); return; }
+  handleImport(invoiceFiles, attachFiles);
+}
+
+// Estrae ricorsivamente i File da un DataTransfer, supportando le cartelle trascinate.
+// Annota ogni file con _path (percorso relativo) così da raggruppare gli allegati per cartella.
+async function filesFromDataTransfer(dt) {
+  if (!dt) return [];
+  const items = dt.items ? [...dt.items] : [];
+  const entries = items.map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...(dt.files || [])]; // browser senza entries API → file piatti
+  const out = [];
+  const walk = entry => new Promise(resolve => {
+    if (entry.isFile) {
+      entry.file(f => { try { f._path = entry.fullPath.replace(/^\//, ''); } catch (e) {} out.push(f); resolve(); }, () => resolve());
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readMore = () => reader.readEntries(async es => {
+        if (!es.length) { resolve(); return; }
+        await Promise.all(es.map(walk));
+        readMore(); // readEntries pagina: si richiama finché non torna vuoto
+      }, () => resolve());
+      readMore();
+    } else resolve();
+  });
+  await Promise.all(entries.map(walk));
+  return out;
+}
+
+async function handleImport(files, attachFiles = []) {
   toast('Lettura file…');
   const { drafts, errors, dupInBatch } = await importFiles(files);
   if (!drafts.length) { openImportResult(errors); return; }
+  linkAttachments(drafts, attachFiles);
   openImportPreview(drafts, errors, dupInBatch);
+}
+
+// Aggancia ogni PDF alla fattura della SUA cartella: il PDF sta in <cartella-fattura>/…/x.pdf
+// e il file fattura in <cartella-fattura>/y.xml → match per prefisso di percorso.
+function linkAttachments(drafts, attachFiles) {
+  if (!attachFiles || !attachFiles.length) return;
+  const dirOf = p => { const i = (p || '').lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+  drafts.forEach(d => {
+    const dir = dirOf(d.path || d.filename || '');
+    if (!dir) return;
+    const found = attachFiles.filter(f => (f._path || f.webkitRelativePath || f.name).startsWith(dir + '/'));
+    if (found.length) d.attachFiles = found;
+  });
 }
 function openImportPreview(drafts, errors, dupInBatch) {
   const cid = activeCompany() || data.companies[0]?.id;
-  const rows = drafts.map(d => `<tr><td>${esc(d.supplierName || d.piva || '—')}</td><td>${esc(d.number || '—')}</td><td>${d.date ? fmtDateFull(d.date) : '—'}</td><td class="r tnum">${fmt(d.total)}</td></tr>`).join('');
+  const nAtt = drafts.reduce((s, d) => s + ((d.attachFiles || []).length), 0);
+  const rows = drafts.map(d => { const na = (d.attachFiles || []).length; return `<tr><td>${esc(d.supplierName || d.piva || '—')}</td><td>${esc(d.number || '—')}</td><td>${d.date ? fmtDateFull(d.date) : '—'}</td><td class="r tnum">${fmt(d.total)}</td><td class="r">${na ? '📎 ' + na : ''}</td></tr>`; }).join('');
   openSheet(`
     <h2>Anteprima import</h2>
-    <div class="sheetsub">${drafts.length} fattur${drafts.length === 1 ? 'a' : 'e'} pronte${dupInBatch ? ` · ${dupInBatch} duplicati nel lotto ignorati` : ''}${errors.length ? ` · ${errors.length} file con errori` : ''}</div>
+    <div class="sheetsub">${drafts.length} fattur${drafts.length === 1 ? 'a' : 'e'} pronte${nAtt ? ` · ${nAtt} allegat${nAtt === 1 ? 'o' : 'i'} PDF` : ''}${dupInBatch ? ` · ${dupInBatch} duplicati nel lotto ignorati` : ''}${errors.length ? ` · ${errors.length} file con errori` : ''}</div>
     <div class="field"><label>Importa nell'azienda</label><select id="imp_co">${companyOptions(cid)}</select></div>
     <div style="max-height:38vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
-      <table class="tbl"><thead><tr><th>Fornitore</th><th>Numero</th><th>Data</th><th class="r">Totale</th></tr></thead><tbody>${rows}</tbody></table>
+      <table class="tbl"><thead><tr><th>Fornitore</th><th>Numero</th><th>Data</th><th class="r">Totale</th><th class="r">All.</th></tr></thead><tbody>${rows}</tbody></table>
     </div>
     ${errors.length ? `<div class="muted" style="font-size:12px;margin-top:8px">Errori: ${errors.map(e => esc(e.name)).join(', ')}</div>` : ''}
     <div class="actions"><button class="btn" data-cancel>Annulla</button><button class="btn primary" data-import>Importa ${drafts.length}</button></div>`,
     sheet => {
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
-      sheet.querySelector('[data-import]').onclick = () => {
-        const r = commitDrafts(drafts, sheet.querySelector('#imp_co').value);
-        closeSheet(); toast(`${r.added} importate${r.skipped ? ` · ${r.skipped} già presenti` : ''}`);
+      sheet.querySelector('[data-import]').onclick = async () => {
+        const btn = sheet.querySelector('[data-import]');
+        btn.disabled = true; btn.textContent = nAtt ? 'Import e allegati…' : 'Import…';
+        const r = await commitDrafts(drafts, sheet.querySelector('#imp_co').value);
+        closeSheet();
+        toast(`${r.added} importate${r.attached ? ` · ${r.attached} allegat${r.attached === 1 ? 'o' : 'i'}` : ''}${r.skipped ? ` · ${r.skipped} già presenti` : ''}`);
       };
     });
 }
@@ -311,6 +358,50 @@ function openImportResult(errors) {
     ${errors.length ? `<div class="muted" style="font-size:12.5px">${errors.map(e => `${esc(e.name)}: ${esc(e.msg)}`).join('<br>')}</div>` : ''}
     <div class="actions"><button class="btn primary" data-ok>Ok</button></div>`,
     sheet => sheet.querySelector('[data-ok]').onclick = closeSheet);
+}
+
+// ---- allegati (PDF) della fattura ----
+const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
+function attBlock(i) {
+  const atts = i.attachments || [];
+  let h = atts.length ? `<div class="list">${atts.map(a => `<div class="row">
+      <div class="emoji">📎</div>
+      <div class="mid" data-att-open="${a.id}" style="cursor:pointer"><div class="t1">${esc(a.name)}</div><div class="t2">${fmtSize(a.size)}${a.addedAt ? ' · ' + new Date(a.addedAt).toLocaleDateString('it-IT') : ''}</div></div>
+      <button class="btn sm danger" data-att-del="${a.id}">Elimina</button>
+    </div>`).join('')}</div>` : `<div class="card empty" style="padding:14px">Nessun allegato.</div>`;
+  h += `<div class="btnrow" style="margin-top:10px"><button class="btn sm" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" accept="application/pdf,.pdf" style="display:none"></div>`;
+  return h;
+}
+function bindAttachments(sheet, i, id) {
+  const attInput = sheet.querySelector('#att_input');
+  sheet.querySelector('[data-att-add]')?.addEventListener('click', () => attInput?.click());
+  if (attInput) attInput.onchange = async () => {
+    const f = attInput.files[0]; attInput.value = '';
+    if (!f) return;
+    toast('Caricamento…');
+    const r = await addAttachment(f);
+    if (!r.ok) { toast('Caricamento allegato non riuscito'); return; }
+    i.attachments = (i.attachments || []).concat(r.meta);
+    save(); toast('Allegato aggiunto ✓'); openInvoice(id);
+  };
+  sheet.querySelectorAll('[data-att-open]').forEach(el => el.onclick = async () => {
+    const a = (i.attachments || []).find(x => x.id === el.dataset.attOpen);
+    if (!a) return;
+    const file = await readAttachment(a);
+    if (!file) { toast('Allegato non trovato'); return; }
+    const url = URL.createObjectURL(file);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  });
+  sheet.querySelectorAll('[data-att-del]').forEach(b => b.onclick = () => {
+    const a = (i.attachments || []).find(x => x.id === b.dataset.attDel);
+    if (!a) return;
+    confirmDialog('Eliminare l\'allegato?', a.name, 'Elimina', async () => {
+      await deleteAttachment(a);
+      i.attachments = (i.attachments || []).filter(x => x.id !== a.id);
+      save(); toast('Allegato eliminato'); openInvoice(id);
+    }, { danger: true });
+  });
 }
 
 // ---- dettaglio fattura ----
@@ -338,6 +429,8 @@ export function openInvoice(id) {
     </div>
     <div class="section-title">Pagamenti</div>
     <div class="list">${paysHtml}</div>
+    <div class="section-title" style="margin-top:14px">Allegati</div>
+    ${attBlock(i)}
     <div class="btnrow" style="margin-top:12px">
       ${res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
       ${res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
@@ -350,6 +443,7 @@ export function openInvoice(id) {
     sheet.querySelector('[data-settle]')?.addEventListener('click', () => openSettleInvoice(i));
     sheet.querySelector('[data-xml]')?.addEventListener('click', () => openXmlViewer(i.id, i.xml));
     sheet.querySelector('[data-edit]').onclick = () => openInvoiceEditor(id);
+    bindAttachments(sheet, i, id);
   });
 }
 
@@ -489,7 +583,7 @@ export function openInvoiceEditor(id) {
           categoryId: g('#i_cat').value, note: g('#i_note').value.trim()
         };
         if (id) { Object.assign(i, rec); save(); toast(rec.creditNote ? 'Nota di credito aggiornata ✓' : 'Fattura aggiornata ✓'); openInvoice(id); }
-        else { data.invoices.push({ id: uid(), ...rec, payments: [], toPay: false, source: 'manual', xml: null, createdAt: Date.now() }); save(); closeSheet(); toast(rec.creditNote ? 'Nota di credito creata ✓' : 'Fattura creata ✓'); }
+        else { data.invoices.push({ id: uid(), ...rec, payments: [], attachments: [], toPay: false, source: 'manual', xml: null, createdAt: Date.now() }); save(); closeSheet(); toast(rec.creditNote ? 'Nota di credito creata ✓' : 'Fattura creata ✓'); }
       };
     });
 }

@@ -86,6 +86,7 @@ export function migrate(d) {
   // Le fatture devono SEMPRE avere payments[] come array di fatti.
   d.invoices.forEach(inv => {
     if (!Array.isArray(inv.payments)) inv.payments = [];
+    if (!Array.isArray(inv.attachments)) inv.attachments = []; // allegati PDF (metadati; binari in attachments_bin)
     if (inv.total == null) inv.total = round2safe((inv.net || 0) + (inv.vat || 0));
     if (inv.withholding == null) inv.withholding = 0;
     inv.toPay = !!inv.toPay; // flag "in pagamento" (intenzione, ortogonale allo stato)
