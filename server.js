@@ -77,7 +77,10 @@ async function api(req, res, url) {
     const b = await readBody(req);
     if (b == null) return json(res, 400, { error: 'JSON non valido' });
     try { return json(res, 200, { ok: true, ...applyChanges(b) }); }
-    catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    catch (e) {
+      if (e && e.conflict) return json(res, 409, { error: 'conflict', rev: e.rev }); // revisione superata: il client ricarica o forza
+      return json(res, 400, { error: String(e.message || e) });
+    }
   }
 
   if (resource === 'reset' && method === 'POST') {

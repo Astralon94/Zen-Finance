@@ -1,6 +1,7 @@
 // ============ Shell applicativa: topbar, nav a tendina, router ============
 import './styles.css';
-import { data, subscribe, save, onSaveStatus, saveStatus } from '../state/store.js';
+import { data, subscribe, save, onSaveStatus, saveStatus, reloadFromServer, forceSave } from '../state/store.js';
+import { openSheet, closeSheet, toast } from './dom.js';
 import { esc } from '../domain/util.js';
 import { invoicesInScope, invResiduo, invOverdue } from '../domain/invoices.js';
 import { activeCompany } from '../domain/finance.js';
@@ -57,14 +58,39 @@ function updateBadge() {
 // Spia di salvataggio: riflette lo stato reale confermato dal server.
 function saveBadgeInner() {
   const conf = {
-    saved:  { c: '#6b8f80', dot: '●', t: 'Salvato' },
-    saving: { c: '#b08a4e', dot: '◍', t: 'Salvataggio…' },
-    error:  { c: '#c2685f', dot: '▲', t: 'Non salvato' },
+    saved:    { c: '#6b8f80', dot: '●', t: 'Salvato' },
+    saving:   { c: '#b08a4e', dot: '◍', t: 'Salvataggio…' },
+    error:    { c: '#c2685f', dot: '▲', t: 'Non salvato' },
+    conflict: { c: '#c2685f', dot: '⚠', t: 'Conflitto — risolvi' },
   };
   const m = conf[saveStatus()] || conf.saved;
   return `<span style="color:${m.c}">${m.dot} ${m.t}</span>`;
 }
-function refreshSaveBadge() { const el = document.getElementById('saveBadge'); if (el) el.innerHTML = saveBadgeInner(); }
+function refreshSaveBadge() {
+  const el = document.getElementById('saveBadge');
+  if (el) el.innerHTML = saveBadgeInner();
+  if (saveStatus() === 'conflict') showConflictDialog();
+}
+
+// Conflitto di concorrenza (409): un'altra scheda/dispositivo ha modificato i dati.
+// Non si sovrascrive in silenzio: si chiede all'utente se ricaricare o forzare.
+function showConflictDialog() {
+  openSheet(`
+    <h2>⚠️ Modifiche in un'altra scheda</h2>
+    <div class="sheetsub">Il database è stato aggiornato altrove (un'altra scheda o dispositivo) mentre lavoravi qui. Per non sovrascrivere quei dati, il salvataggio è in pausa.</div>
+    <div class="list" style="margin:12px 0;gap:8px">
+      <div class="muted" style="font-size:13px">🔄 <b>Ricarica</b>: riprende i dati aggiornati dal database. Le modifiche non salvate di <b>questa</b> scheda vengono perse.</div>
+      <div class="muted" style="font-size:13px">⤴️ <b>Forza salvataggio</b>: sovrascrive col contenuto di questa scheda (l'altra scheda perde le sue modifiche).</div>
+    </div>
+    <div class="actions">
+      <button class="btn" data-force>Forza salvataggio</button>
+      <button class="btn primary" data-reload>Ricarica (consigliato)</button>
+    </div>`,
+    sheet => {
+      sheet.querySelector('[data-reload]').onclick = async () => { const ok = await reloadFromServer(); closeSheet(); toast(ok ? 'Dati ricaricati dal database' : 'Ricarica non riuscita'); };
+      sheet.querySelector('[data-force]').onclick = () => { forceSave(); closeSheet(); toast('Salvataggio forzato — l\'altra scheda è stata sovrascritta'); };
+    });
+}
 
 function companySelect() {
   const ac = activeCompany();
@@ -112,6 +138,10 @@ export function renderApp() {
   // company
   const sel = app.querySelector('#coSel');
   sel.onchange = () => { data.settings.activeCompany = sel.value || null; save(); };
+
+  // spia salvataggio: in conflitto è cliccabile per riaprire la scelta ricarica/forza
+  const badge = app.querySelector('#saveBadge');
+  if (badge) { badge.style.cursor = 'pointer'; badge.onclick = () => { if (saveStatus() === 'conflict') showConflictDialog(); }; }
 
   // view
   const root = app.querySelector('#view');

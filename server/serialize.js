@@ -155,6 +155,13 @@ function upsertMain(c, obj) {
 export function applyChanges(cs) {
   if (!cs || typeof cs !== 'object' || typeof cs.collections !== 'object')
     throw new Error('Changeset non valido');
+  // Guardia di concorrenza ottimistica: se il client si basa su una revisione ormai
+  // superata (un'altra scheda/dispositivo ha scritto nel frattempo), rifiuta invece di
+  // sovrascrivere in silenzio. Il client gestisce il 409 (ricarica o forza).
+  // Node è single-thread e applyChanges è sincrona → nessun altro write si interpone tra
+  // questo controllo e il COMMIT: nessuna finestra di race reale.
+  if (cs.baseRev != null && cs.baseRev !== currentRev())
+    throw Object.assign(new Error('conflict'), { conflict: true, rev: currentRev() });
   db.exec('BEGIN IMMEDIATE');
   try {
     setMeta('version', DATA_VERSION);
