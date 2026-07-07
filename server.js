@@ -187,6 +187,8 @@ function statusPage() {
 
 async function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
+  // favicon.ico non esiste come file: rispondi con la PNG brand (il 404 fa scattare l'icona generica)
+  if (rel === '/favicon.ico') rel = '/icon-180.png';
   if (rel === '/') {
     // SPA: index.html SEMPRE rivalidato (no-cache) così dopo un aggiornamento il browser
     // non serve mai il vecchio bundle inlinato. Locale = costo di refetch trascurabile.
