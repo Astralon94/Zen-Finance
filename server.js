@@ -129,15 +129,16 @@ function statusPage() {
 async function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
   if (rel === '/') {
-    // se esiste una SPA in public/index.html servila, altrimenti pagina di stato.
-    try { const html = await readFile(join(PUBLIC, 'index.html')); res.writeHead(200, { 'Content-Type': MIME['.html'] }); return res.end(html); }
-    catch { res.writeHead(200, { 'Content-Type': MIME['.html'] }); return res.end(statusPage()); }
+    // SPA: index.html SEMPRE rivalidato (no-cache) così dopo un aggiornamento il browser
+    // non serve mai il vecchio bundle inlinato. Locale = costo di refetch trascurabile.
+    try { const html = await readFile(join(PUBLIC, 'index.html')); res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' }); return res.end(html); }
+    catch { res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' }); return res.end(statusPage()); }
   }
   const filePath = normalize(join(PUBLIC, rel));
   if (!filePath.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   try {
     const data = await readFile(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
   } catch { res.writeHead(404); res.end('Not found'); }
 }
