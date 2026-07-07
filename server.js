@@ -8,10 +8,37 @@ import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportData, importData, applyChanges, resetData, seedIfEmpty, counts, getInvoiceXml } from './server/serialize.js';
 import { putAttachment, getAttachment, deleteAttachment } from './server/attachments.js';
+import { backupDb } from './server/db.js';
+import * as updater from './server/updater.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, 'public');
 const PORT = process.env.PORT || 4331;
+
+// ---- Aggiornamento software (metodo Zen-Store: manifest + pacchetto su GitHub Releases) ----
+// Codice di uscita che chiede al supervisore/launcher di riavviare (per applicare un aggiornamento).
+const EXIT_RESTART = 42;
+// URL del manifest "latest" (repo pubblica). Sovrascrivibile/disattivabile con la env ZEN_UPDATE_URL.
+const UPDATE_URL = process.env.ZEN_UPDATE_URL !== undefined
+  ? process.env.ZEN_UPDATE_URL
+  : 'https://github.com/Astralon94/zen-finance-update/releases/latest/download/manifest.json';
+// Cache dell'ultimo controllo (per la UI, senza richiamare la rete a ogni richiesta).
+let ultimoCheck = { corrente: updater.currentVersion(__dirname), disponibile: false, controllato_il: null };
+
+async function controllaAggiornamenti() {
+  if (!UPDATE_URL) return;
+  try {
+    const r = await updater.checkUpdate(UPDATE_URL, __dirname);
+    ultimoCheck = { ...r, controllato_il: new Date().toISOString() };
+    if (r.disponibile) console.log(`[update] disponibile la versione ${r.ultima} (attuale ${r.corrente})`);
+  } catch { /* rete non disponibile: riprova al prossimo giro */ }
+}
+function programmaAggiornamenti() {
+  if (!UPDATE_URL) return;
+  controllaAggiornamenti();
+  const t = setInterval(controllaAggiornamenti, 12 * 60 * 60 * 1000);
+  if (t.unref) t.unref();
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -87,6 +114,38 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, ...resetData() });
   }
 
+  // ---- AGGIORNAMENTO SOFTWARE ----
+  if (resource === 'updates') {
+    // Stato corrente (versione + ultimo controllo in cache)
+    if (method === 'GET') {
+      return json(res, 200, { ...ultimoCheck, url_configurato: !!UPDATE_URL });
+    }
+    // Controlla ora (interroga il manifest su GitHub)
+    if (method === 'POST' && id === 'check') {
+      if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
+      try {
+        const r = await updater.checkUpdate(UPDATE_URL, __dirname);
+        ultimoCheck = { ...r, controllato_il: new Date().toISOString() };
+        return json(res, 200, ultimoCheck);
+      } catch (e) { return json(res, 502, { error: 'Controllo fallito: ' + e.message }); }
+    }
+    // Scarica e installa l'aggiornamento, poi esce con codice 42 (il supervisore riavvia sul codice nuovo).
+    if (method === 'POST' && id === 'install') {
+      if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
+      try {
+        const chk = await updater.checkUpdate(UPDATE_URL, __dirname);
+        if (!chk.disponibile) return json(res, 409, { error: 'Nessun aggiornamento disponibile' });
+        if (!chk.download_url) return json(res, 400, { error: 'Il manifest non indica il pacchetto (url)' });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const rep = await updater.installaAggiornamento(chk.download_url, { appDir: __dirname, dataDir: join(__dirname, 'data'), stamp });
+        // backup del database prima del riavvio, poi uscita differita per far tornare la risposta
+        try { backupDb({ force: true }); } catch {}
+        setTimeout(() => process.exit(EXIT_RESTART), 800);
+        return json(res, 200, { ok: true, ...rep, riavvio: true });
+      } catch (e) { return json(res, 500, { error: 'Installazione fallita: ' + e.message }); }
+    }
+  }
+
   // Allegati (BLOB): upload / download / delete.
   if (resource === 'attachments') {
     if (method === 'POST' && !id) {
@@ -155,7 +214,8 @@ createServer(async (req, res) => {
     json(res, 500, { error: 'Errore interno', detail: String(err.message || err) });
   }
 }).listen(PORT, () => {
-  console.log(`\n  Zen-Finance — server dati`);
+  console.log(`\n  Zen-Finance — server dati (v${updater.currentVersion(__dirname)})`);
   console.log(`  ▸ http://localhost:${PORT}`);
   console.log(`  ▸ rev ${counts().rev}\n`);
+  programmaAggiornamenti(); // controllo aggiornamenti all'avvio e ogni 12 ore
 });
