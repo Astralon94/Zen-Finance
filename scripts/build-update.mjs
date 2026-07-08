@@ -13,8 +13,9 @@ const APP_SLUG = 'zen-finance';
 const APP = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Cartelle/file da NON includere nel pacchetto (dati locali, dipendenze, artefatti, note interne).
 const ESCLUSI = new Set(['data', 'node_modules', '.git', 'dist', '.netlify', '.DS_Store', 'CLAUDE.md']);
-// Estensioni testuali ammesse (il pacchetto è UTF-8: niente binari come immagini).
+// Estensioni ammesse: testuali (UTF-8) + binarie (trasportate in base64 nel pacchetto).
 const OK_EXT = /\.(js|mjs|cjs|json|css|html|md|txt|svg|webmanifest|bat|command|sh)$/i;
+const BIN_EXT = /\.(png|ico|jpg|jpeg|gif|webp|woff2?)$/i;
 
 function elenca(dir, base = APP, out = []) {
   for (const n of readdirSync(dir)) {
@@ -22,7 +23,7 @@ function elenca(dir, base = APP, out = []) {
     const p = join(dir, n);
     const st = statSync(p);
     if (st.isDirectory()) elenca(p, base, out);
-    else if (OK_EXT.test(n)) out.push(relative(base, p).replace(/\\/g, '/'));
+    else if (OK_EXT.test(n) || BIN_EXT.test(n)) out.push(relative(base, p).replace(/\\/g, '/'));
   }
   return out;
 }

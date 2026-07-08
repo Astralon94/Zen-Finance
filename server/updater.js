@@ -99,16 +99,17 @@ export function leggiPacchetto(buf) {
 export function applicaPacchetto(buf, { appDir = APP_DIR, dataDir = join(APP_DIR, 'data'), stamp = 'update' } = {}) {
   const pkg = leggiPacchetto(buf);
   const files = pkg.files;
+  const filesB64 = pkg.filesB64 && typeof pkg.filesB64 === 'object' ? pkg.filesB64 : {};
   const rels = Object.keys(files);
-  const rifiutati = rels.filter((r) => !pathAmmesso(r));
+  const relsB64 = Object.keys(filesB64);
+  const rifiutati = [...rels, ...relsB64].filter((r) => !pathAmmesso(r));
   if (rifiutati.length) throw new Error('Percorsi non ammessi nel pacchetto: ' + rifiutati.slice(0, 3).join(', '));
 
   const backupDir = join(dataDir, 'updates-backup', stamp);
   mkdirSync(backupDir, { recursive: true });
   let scritti = 0, nuovi = 0;
-  for (const rel of rels) {
+  const scrivi = (rel, contenuto) => {
     const dest = join(appDir, rel);
-    const contenuto = files[rel];
     if (existsSync(dest)) {
       const b = join(backupDir, rel);
       mkdirSync(dirname(b), { recursive: true });
@@ -116,15 +117,18 @@ export function applicaPacchetto(buf, { appDir = APP_DIR, dataDir = join(APP_DIR
       scritti++;
     } else { nuovi++; }
     mkdirSync(dirname(dest), { recursive: true });
-    writeFileSync(dest, contenuto, 'utf8');
-  }
+    writeFileSync(dest, contenuto);
+  };
+  for (const rel of rels) scrivi(rel, files[rel]);
+  // binari (icone, ecc.): trasportati in base64 nel campo additivo filesB64
+  for (const rel of relsB64) scrivi(rel, Buffer.from(filesB64[rel], 'base64'));
   // ritenzione: tieni gli ultimi 5 backup di aggiornamento
   try {
     const base = join(dataDir, 'updates-backup');
     const dirs = readdirSync(base).filter((d) => statSync(join(base, d)).isDirectory()).sort();
     for (const d of dirs.slice(0, -5)) rmSync(join(base, d), { recursive: true, force: true });
   } catch {}
-  return { version: pkg.version, note: pkg.note || '', file_totali: rels.length, sovrascritti: scritti, nuovi, backup: backupDir };
+  return { version: pkg.version, note: pkg.note || '', file_totali: rels.length + relsB64.length, sovrascritti: scritti, nuovi, backup: backupDir };
 }
 
 // Scarica + applica in un colpo solo.
@@ -135,12 +139,15 @@ export async function installaAggiornamento(downloadUrl, opts = {}) {
 }
 
 // Costruisce un pacchetto dai file dell'app (usato dallo script di build lato distributore).
+const BIN_EXT = /\.(png|ico|jpg|jpeg|gif|webp|woff2?)$/i;
 export function costruisciPacchetto(appDir, relativi, { version, note = '', pubblicato = '' } = {}) {
-  const files = {};
+  const files = {}, filesB64 = {};
   for (const rel of relativi) {
     const p = join(appDir, rel);
-    if (existsSync(p) && statSync(p).isFile()) files[rel] = readFileSync(p, 'utf8');
+    if (!existsSync(p) || !statSync(p).isFile()) continue;
+    if (BIN_EXT.test(rel)) filesB64[rel] = readFileSync(p).toString('base64');
+    else files[rel] = readFileSync(p, 'utf8');
   }
-  const obj = { version: version || currentVersion(appDir), note, pubblicato, files };
+  const obj = { version: version || currentVersion(appDir), note, pubblicato, files, filesB64 };
   return gzipSync(Buffer.from(JSON.stringify(obj), 'utf8'));
 }
