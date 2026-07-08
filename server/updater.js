@@ -151,3 +151,24 @@ export function costruisciPacchetto(appDir, relativi, { version, note = '', pubb
   const obj = { version: version || currentVersion(appDir), note, pubblicato, files, filesB64 };
   return gzipSync(Buffer.from(JSON.stringify(obj), 'utf8'));
 }
+
+// Bootstrap binari una-tantum: gli updater precedenti al supporto filesB64 non
+// applicavano i binari del pacchetto; all'avvio materializziamo le icone da
+// server/icons-bootstrap.json (solo se diverse da quanto su disco). Rimuovibile
+// quando tutte le installazioni hanno l'updater con filesB64.
+export function bootstrapAssets(appDir = APP_DIR) {
+  let map;
+  try { map = JSON.parse(readFileSync(join(appDir, 'server', 'icons-bootstrap.json'), 'utf8')); } catch { return 0; }
+  let scritti = 0;
+  for (const [rel, b64] of Object.entries(map)) {
+    if (!pathAmmesso(rel)) continue;
+    try {
+      const dest = join(appDir, rel);
+      const want = Buffer.from(b64, 'base64');
+      let cur = null; try { cur = readFileSync(dest); } catch {}
+      if (!cur || !cur.equals(want)) { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, want); scritti++; }
+    } catch {}
+  }
+  if (scritti) console.log(`[update] bootstrap asset binari: ${scritti} file aggiornati`);
+  return scritti;
+}
