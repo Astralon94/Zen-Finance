@@ -1,8 +1,9 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <rect width="1024" height="1024" rx="246" ry="246" fill="#545ea6"/>
-  <g transform="translate(512 512) scale(1.18) translate(-475 -512)" fill="none" stroke="#ffffff" stroke-width="50" stroke-linecap="round">
-    <path d="M 700 360 A 222 222 0 1 0 700 664"/>
-    <line x1="250" y1="455" x2="610" y2="455"/>
-    <line x1="250" y1="569" x2="566" y2="569"/>
+  <!-- euro: arco a C aperto a destra + due barre -->
+  <g fill="none" stroke="#ffffff" stroke-width="59" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 777 333 A 262 262 0 1 0 777 691"/>
+    <line x1="247" y1="445" x2="671" y2="445"/>
+    <line x1="247" y1="579" x2="619" y2="579"/>
   </g>
 </svg>
