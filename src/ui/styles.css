@@ -157,10 +157,10 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 /* ---- forms ---- */
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--sub); margin-bottom: 5px; }
-.field input, .field select, .field textarea {
+.field input:not([type="checkbox"]), .field select, .field textarea {
   width: 100%; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none;
 }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field input:not([type="checkbox"]):focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
 .field select { appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; }
 .frow { display: flex; gap: 10px; } .frow > * { flex: 1; }
 

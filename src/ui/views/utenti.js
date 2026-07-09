@@ -47,8 +47,9 @@ export function bind(root) {
   rootEl = root;
   if (!can('utenti.manage')) return;
   root.querySelector('[data-new]')?.addEventListener('click', () => openUserForm(null));
-  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => x.id === b.dataset.edit); if (u) openUserForm(u); });
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => x.id === b.dataset.del); if (u) doDelete(u); });
+  // NB: b.dataset.* è SEMPRE stringa, mentre u.id è numerico (INTEGER del DB): confronta come stringhe.
+  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.edit); if (u) openUserForm(u); });
+  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.del); if (u) doDelete(u); });
   if (usersCache === null) refresh();
 }
 
