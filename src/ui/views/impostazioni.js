@@ -1,7 +1,7 @@
 // ============ Vista Impostazioni ============
 import { data, save, setData, exportJSON, importJSON } from '../../state/store.js';
 import { DEFAULT_DATA } from '../../state/model.js';
-import { can } from '../../state/auth.js';
+import { can, authFetch } from '../../state/auth.js';
 import { esc, fmt, todayStr, fmtDateFull } from '../../domain/util.js';
 import { toast, confirmDialog } from '../dom.js';
 import { backfillMatchNames } from '../../domain/backfill.js';
@@ -172,11 +172,11 @@ export function bind(root) {
     updStato.innerHTML = txt;
     if (updInstBtn) updInstBtn.style.display = s.disponibile ? '' : 'none';
   };
-  fetch('/api/updates').then(r => r.ok ? r.json() : null).then(showUpd).catch(() => {});
+  authFetch('/api/updates').then(r => r.ok ? r.json() : null).then(showUpd).catch(() => {});
   if (updCheckBtn) updCheckBtn.onclick = async () => {
     updCheckBtn.disabled = true;
     try {
-      const r = await fetch('/api/updates/check', { method: 'POST' });
+      const r = await authFetch('/api/updates/check', { method: 'POST' });
       const s = await r.json();
       if (!r.ok) { toast(s.error || 'Controllo fallito'); return; }
       showUpd(s);
@@ -187,7 +187,7 @@ export function bind(root) {
   if (updInstBtn) updInstBtn.onclick = () => confirmDialog('Installare l\'aggiornamento?', 'Il nuovo software verrà scaricato e installato; il server si riavvia da solo e la pagina si ricarica. I dati non vengono toccati.', 'Installa', async () => {
     updInstBtn.disabled = true;
     try {
-      const r = await fetch('/api/updates/install', { method: 'POST' });
+      const r = await authFetch('/api/updates/install', { method: 'POST' });
       const s = await r.json();
       if (!r.ok) { toast(s.error || 'Installazione fallita'); updInstBtn.disabled = false; return; }
       toast(`Versione ${s.version} installata — riavvio in corso…`);
