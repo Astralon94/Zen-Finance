@@ -62,8 +62,8 @@ function yearsAvailable() {
 
 function segmented() {
   const n = countToPay(activeCompany());
-  // Il tab "In pagamento" registra pagamenti (scrittura): visibile solo con fatture.manage.
-  const payTab = can('fatture.manage') ? `<button class="chip ${mode === 'pay' ? 'on' : ''}" data-mode="pay">★ In pagamento${n ? ' · ' + n : ''}</button>` : '';
+  // Il tab "In pagamento" registra pagamenti (scrittura): visibile solo con fatture.pagamenti.
+  const payTab = can('fatture.pagamenti') ? `<button class="chip ${mode === 'pay' ? 'on' : ''}" data-mode="pay">★ In pagamento${n ? ' · ' + n : ''}</button>` : '';
   return `<div class="chips" style="margin-top:2px">
     <button class="chip ${mode === 'list' ? 'on' : ''}" data-mode="list">Elenco</button>
     ${payTab}
@@ -115,8 +115,8 @@ function exportStoricoPdf(limit) {
 }
 
 export function render() {
-  const w = can('fatture.manage');
-  if (mode === 'pay' && !w) mode = 'list';   // il tab pagamenti richiede fatture.manage
+  const wCrea = can('fatture.crea'), wImp = can('fatture.importa'), wPay = can('fatture.pagamenti');
+  if (mode === 'pay' && !wPay) mode = 'list';   // il tab pagamenti richiede fatture.pagamenti
   if (mode === 'pay') {
     return `<div class="pagehead"><h1>Fatture</h1></div>${segmented()}${payBody()}`;
   }
@@ -143,16 +143,20 @@ export function render() {
   let h = `<div class="pagehead"><h1>Fatture</h1><span class="sub">passive</span></div>`;
   h += segmented();
 
-  // import (scrittura): solo con fatture.manage
-  if (w) {
+  // import fatture (fatture.importa) e creazione manuale (fatture.crea): permessi distinti
+  if (wImp) {
     h += `<div class="drop" id="drop">
       <div>Trascina qui i file oppure <b>scegli</b></div>
       <div class="muted" style="font-size:12.5px;margin-top:6px">.xml · .p7m firmati · archivi .zip — singoli o multipli</div>
       <input type="file" id="fileInput" accept=".xml,.p7m,.zip" multiple style="display:none">
       <input type="file" id="dirInput" webkitdirectory style="display:none">
     </div>`;
-    h += `<div class="btnrow" style="margin:12px 0"><button class="btn" data-impdir>📁 Importa cartella…</button><button class="btn primary" data-newinv>+ Fattura manuale</button></div>`;
   }
+  const impBtns = [
+    wImp ? '<button class="btn" data-impdir>📁 Importa cartella…</button>' : '',
+    wCrea ? '<button class="btn primary" data-newinv>+ Fattura manuale</button>' : '',
+  ].join('');
+  if (impBtns) h += `<div class="btnrow" style="margin:12px 0">${impBtns}</div>`;
 
   // ---- filtri ----
   const years = yearsAvailable();
@@ -178,12 +182,12 @@ export function render() {
     <div class="tnum" style="font-weight:800">${fmt(aggRes)} <span class="muted" style="font-weight:500;font-size:12px">residuo</span></div>
   </div>`;
 
-  // seleziona tutte le fatture visibili (coi filtri attivi) — azioni di scrittura: solo con fatture.manage
+  // seleziona tutte le fatture visibili (coi filtri attivi) — azioni di pagamento: solo con fatture.pagamenti
   const allShownSel = shown.length > 0 && shown.every(i => sel.has(i.id));
-  if (w && shown.length) h += `<div class="btnrow" style="margin-bottom:10px"><button class="btn sm" data-selall>${allShownSel ? '☐ Deseleziona tutte' : '☑ Seleziona tutte (' + shown.length + ')'}</button></div>`;
+  if (wPay && shown.length) h += `<div class="btnrow" style="margin-bottom:10px"><button class="btn sm" data-selall>${allShownSel ? '☐ Deseleziona tutte' : '☑ Seleziona tutte (' + shown.length + ')'}</button></div>`;
 
   // barra azioni selezione
-  if (w && sel.size) {
+  if (wPay && sel.size) {
     const selInvs = [...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean);
     const selRes = round2(selInvs.reduce((s, i) => s + invSignedResiduo(i), 0));
     h += `<div class="card" style="position:sticky;top:64px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-color:var(--accent)">
@@ -223,7 +227,7 @@ function rowInv(i) {
   // NDC: importo a favore → segno + e colore verde; fatture → uscita
   const amtCls = cn ? 'pos' : (st === 'paid' ? '' : 'neg');
   const amtTxt = cn ? '+' + amt : amt;
-  const selBox = can('fatture.manage') ? `<input type="checkbox" class="selbox" data-sel="${i.id}" ${checked} style="width:18px;height:18px;flex-shrink:0">` : '';
+  const selBox = can('fatture.pagamenti') ? `<input type="checkbox" class="selbox" data-sel="${i.id}" ${checked} style="width:18px;height:18px;flex-shrink:0">` : '';
   return `<div class="row ${sel.has(i.id) ? 'sel' : ''}">
     ${selBox}
     <div class="emoji" data-inv="${i.id}" style="cursor:pointer">${cn ? '↩️' : (i.source === 'xml' ? '📄' : '🧾')}</div>
@@ -373,7 +377,7 @@ function openImportResult(errors) {
 // ---- allegati (PDF) della fattura ----
 const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
 function attBlock(i) {
-  const w = can('fatture.manage');
+  const w = can('fatture.modifica');   // allegati = parte della modifica fattura
   const atts = i.attachments || [];
   let h = atts.length ? `<div class="list">${atts.map(a => `<div class="row">
       <div class="emoji">📎</div>
@@ -419,7 +423,9 @@ function bindAttachments(sheet, i, id) {
 export function openInvoice(id) {
   const i = data.invoices.find(x => x.id === id);
   if (!i) return;
-  const w = can('fatture.manage');
+  const wPay = can('fatture.pagamenti');   // pagamenti/saldi/flag/rimozione pagamento
+  const wMod = can('fatture.modifica');    // modifica dati fattura e allegati
+  const w = wPay;                          // sezione pagamenti del dettaglio
   const res = invResiduo(i), pay = invPayable(i), wh = invWithholding(i);
   const payments = invPayments(i);
   const line = (l, v, cls = '') => `<div class="row"><div class="mid t2">${l}</div><div class="amt tnum ${cls}">${v}</div></div>`;
@@ -447,7 +453,7 @@ export function openInvoice(id) {
       ${w && res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
       ${w && res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
       ${i.source === 'xml' ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
-      ${w ? '<button class="btn" data-edit>Modifica</button>' : ''}
+      ${wMod ? '<button class="btn" data-edit>Modifica</button>' : ''}
     </div>
     ${w ? '<div class="muted" style="font-size:11.5px;margin-top:8px">Per eliminare una fattura: Impostazioni → "Elimina una fattura". (Qui puoi rimuovere i singoli pagamenti senza toccare la fattura.)</div>' : ''}`, sheet => {
     sheet.querySelectorAll('[data-delpay]').forEach(b => b.onclick = () => { removePayment(i, b.dataset.delpay); toast('Pagamento rimosso'); openInvoice(id); });

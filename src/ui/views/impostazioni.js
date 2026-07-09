@@ -1,6 +1,5 @@
 // ============ Vista Impostazioni ============
-import { data, save, setData, exportJSON, importJSON } from '../../state/store.js';
-import { DEFAULT_DATA } from '../../state/model.js';
+import { data, save, exportJSON, importJSON, resetAll } from '../../state/store.js';
 import { can, authFetch } from '../../state/auth.js';
 import { esc, fmt, todayStr, fmtDateFull } from '../../domain/util.js';
 import { toast, confirmDialog } from '../dom.js';
@@ -10,10 +9,12 @@ import { co } from '../../domain/finance.js';
 import { applyTheme } from '../app.js';
 
 export function render() {
-  const cManage = can('impostazioni.manage');   // aspetto, manutenzione, aggiornamento software
+  const cManage = can('impostazioni.manage');   // aspetto, manutenzione
+  const cSoftware = can('software.aggiorna');    // aggiornamento software
   const cExport = can('dati.export');            // esporta backup
-  const cImport = can('dati.import');            // importa/sostituisci + reset
-  const cFatt = can('fatture.manage');           // elimina fattura
+  const cImport = can('dati.import');            // importa/sostituisci
+  const cReset = can('dati.reset');              // azzera dati (zona pericolosa)
+  const cFatt = can('fatture.elimina');          // elimina fattura
   const t = data.settings.theme || 'auto';
   const opt = (v, l) => `<button class="chip ${t === v ? 'on' : ''}" data-th="${v}">${l}</button>`;
   let h = `<div class="pagehead"><h1>Impostazioni</h1></div>`;
@@ -76,7 +77,7 @@ export function render() {
     </div>`;
   }
 
-  if (cManage) {
+  if (cSoftware) {
     any = true;
     h += `<div class="section-title">Aggiornamento software</div>`;
     h += `<div class="card">
@@ -89,7 +90,7 @@ export function render() {
     </div>`;
   }
 
-  if (cImport) {
+  if (cReset) {
     any = true;
     h += `<div class="section-title">Zona pericolosa</div>`;
     h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
@@ -204,8 +205,8 @@ export function bind(root) {
   });
 
   root.querySelector('[data-wipe]')?.addEventListener('click', () => confirmDialog('Cancellare tutti i dati?', 'Operazione irreversibile. Ne viene comunque tenuto un backup del database lato server.', 'Continua', () => {
-    confirmDialog('Sei davvero sicuro?', 'Tutte le aziende, conti, movimenti e fatture verranno eliminati.', 'Cancella tutto', () => {
-      setData(DEFAULT_DATA()); toast('Dati cancellati');
+    confirmDialog('Sei davvero sicuro?', 'Tutte le aziende, conti, movimenti e fatture verranno eliminati.', 'Cancella tutto', async () => {
+      const ok = await resetAll(); toast(ok ? 'Dati cancellati' : 'Azzeramento non riuscito (permesso mancante?)');
     }, { danger: true });
   }, { danger: true }));
 }

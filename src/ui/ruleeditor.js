@@ -7,9 +7,11 @@ import { categoryOptions, supplierPicker, bindCombos } from './forms.js';
 
 // id = regola esistente (modifica) | null (nuova). prefill = valori iniziali per la nuova regola.
 export function openRuleEditor(id, prefill = {}, onSaved) {
-  // Le regole sono un'anagrafica ma possono anche nascere da un movimento: la scrittura
-  // è ammessa a chi gestisce anagrafiche oppure movimenti (entrambi valgono lato backend).
-  const w = can('anagrafiche.manage') || can('movimenti.manage');
+  // Le regole sono un'anagrafica ma possono anche nascere da un movimento ("Crea regola").
+  // Salvare una NUOVA regola = regole.crea; una ESISTENTE = regole.modifica; eliminarla = regole.elimina.
+  const wSave = id ? can('regole.modifica') : can('regole.crea');
+  const wDel = !!id && can('regole.elimina');
+  const w = wSave;   // editabilità dei campi + label Annulla/Salva
   const r = id ? data.rules.find(x => x.id === id) : null;
   const v = {
     keyword: r?.keyword ?? prefill.keyword ?? '',
@@ -27,7 +29,7 @@ export function openRuleEditor(id, prefill = {}, onSaved) {
     <div class="field"><label>Imposta fornitore/cliente</label>${supplierPicker('r_sup', v.supplierId)}</div>
     <div class="field"><label>Nome visualizzato</label><input id="r_name" value="${esc(v.displayName)}" placeholder="facoltativo"></div>
     <div class="field"><label><input type="checkbox" id="r_en" ${v.enabled ? 'checked' : ''}> Attiva</label></div>
-    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       bindCombos(sheet);
       let scope = v.appliesTo;
@@ -48,7 +50,7 @@ export function openRuleEditor(id, prefill = {}, onSaved) {
         save(); closeSheet(); toast('Regola salvata ✓');
         if (onSaved) onSaved();
       });
-      if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la regola?', '', 'Elimina', () => { data.rules = data.rules.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminata'); }, { danger: true });
+      if (wDel) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la regola?', '', 'Elimina', () => { data.rules = data.rules.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminata'); }, { danger: true });
       // Sola lettura (regola aperta senza permesso di scrittura): campi e chip inerti.
       if (!w) {
         sheet.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });

@@ -8,48 +8,94 @@
 //    2) la voce in NAV (se ha una schermata)
 //    3) la guardia nell'endpoint in server.js
 //
-//  Modello (Livello A): autenticazione + gating UI + guardia di scrittura
-//  GROSSOLANA sul backend (un solo endpoint dati). Nessun filtraggio del dataset
-//  per utente: tutti gli autenticati caricano lo stato intero (app locale su un Mac).
+//  Modello (Livello A, granularità FINE): autenticazione + gating UI + guardia di
+//  scrittura sul backend (un solo endpoint dati). I permessi sono decomposti per
+//  ENTITÀ × AZIONE: ogni singolo controllo di scrittura della UI è gatinato dal
+//  permesso specifico. Nessun filtraggio del dataset per utente: tutti gli
+//  autenticati caricano lo stato intero (app locale su un Mac).
+//
+//  Vocabolario azioni (suffissi): .view (consultare, una sola per AREA di nav),
+//  .crea, .modifica, .elimina, .importa, .esporta + azioni di dominio
+//  (.riconcilia, .pagamenti, .esegui, .rate, .allegati).
 //
 //  Regole d'oro:
 //   - Gli utenti con ruolo 'admin' hanno SEMPRE tutti i permessi.
 //   - I permessi con adminOnly:true valgono solo per gli admin (non assegnabili).
+//   - I permessi con write:true abilitano la scrittura dei DATI (vedi DATA_MANAGE).
 //   - I permessi standard sono "particellari": assegnabili singolarmente.
 // =============================================================================
 
 export const RUOLI = { admin: 'Amministratore', standard: 'Operatore' };
 
-// Catalogo permessi (particellari). `group` serve solo a raggrupparli nella UI.
+// Catalogo permessi (particellari). `group` serve a raggrupparli nella UI;
+// `write:true` marca le azioni che modificano le collezioni dati.
 export const PERMISSIONS = [
-  { key: 'dashboard.view',     group: 'Riepiloghi',    label: 'Vedere la Dashboard' },
-  { key: 'pnl.view',           group: 'Riepiloghi',    label: 'Vedere il Conto economico' },
+  // ---- Riepiloghi (sola lettura) ----
+  { key: 'dashboard.view',       group: 'Riepiloghi',     label: 'Vedere la Dashboard' },
+  { key: 'pnl.view',             group: 'Riepiloghi',     label: 'Vedere il Conto economico' },
 
-  { key: 'movimenti.view',     group: 'Movimenti',     label: 'Consultare i movimenti' },
-  { key: 'movimenti.manage',   group: 'Movimenti',     label: 'Registrare/modificare/eliminare movimenti e importare estratti conto' },
+  // ---- Movimenti ----
+  { key: 'movimenti.view',       group: 'Movimenti',      label: 'Consultare i movimenti' },
+  { key: 'movimenti.crea',       group: 'Movimenti',      label: 'Registrare nuovi movimenti', write: true },
+  { key: 'movimenti.modifica',   group: 'Movimenti',      label: 'Modificare i movimenti (dati e stato)', write: true },
+  { key: 'movimenti.elimina',    group: 'Movimenti',      label: 'Eliminare i movimenti', write: true },
+  { key: 'movimenti.importa',    group: 'Movimenti',      label: 'Importare estratti conto', write: true },
+  { key: 'movimenti.riconcilia', group: 'Movimenti',      label: 'Riconciliare e scollegare i movimenti', write: true },
 
-  { key: 'fatture.view',       group: 'Fatture',       label: 'Consultare le fatture' },
-  { key: 'fatture.manage',     group: 'Fatture',       label: 'Registrare/importare/eliminare fatture e registrare pagamenti' },
+  // ---- Fatture ----
+  { key: 'fatture.view',         group: 'Fatture',        label: 'Consultare le fatture' },
+  { key: 'fatture.crea',         group: 'Fatture',        label: 'Registrare fatture manuali', write: true },
+  { key: 'fatture.importa',      group: 'Fatture',        label: 'Importare fatture (XML/P7M/ZIP)', write: true },
+  { key: 'fatture.modifica',     group: 'Fatture',        label: 'Modificare le fatture e gli allegati', write: true },
+  { key: 'fatture.elimina',      group: 'Fatture',        label: 'Eliminare le fatture', write: true },
+  { key: 'fatture.pagamenti',    group: 'Fatture',        label: 'Registrare pagamenti e saldi delle fatture', write: true },
 
-  { key: 'f24.view',           group: 'Scadenze',      label: 'Consultare gli F24' },
-  { key: 'programmati.view',   group: 'Scadenze',      label: 'Consultare i movimenti programmati' },
-  { key: 'programmati.manage', group: 'Scadenze',      label: 'Gestire i movimenti programmati' },
+  // ---- Scadenze (F24 + Programmati) ----
+  { key: 'f24.view',             group: 'Scadenze',       label: 'Consultare gli F24' },
+  { key: 'programmati.view',     group: 'Scadenze',       label: 'Consultare i movimenti programmati' },
+  { key: 'programmati.crea',     group: 'Scadenze',       label: 'Creare movimenti programmati', write: true },
+  { key: 'programmati.modifica', group: 'Scadenze',       label: 'Modificare i movimenti programmati', write: true },
+  { key: 'programmati.elimina',  group: 'Scadenze',       label: 'Eliminare i movimenti programmati', write: true },
+  { key: 'programmati.esegui',   group: 'Scadenze',       label: 'Completare e riaprire le scadenze', write: true },
 
-  { key: 'finanziamenti.view', group: 'Rateizzazioni', label: 'Consultare rateizzazioni e finanziamenti' },
-  { key: 'finanziamenti.manage', group: 'Rateizzazioni', label: 'Gestire piani, rate e allegati' },
+  // ---- Rateizzazioni / Finanziamenti ----
+  { key: 'finanziamenti.view',     group: 'Rateizzazioni', label: 'Consultare rateizzazioni e finanziamenti' },
+  { key: 'finanziamenti.crea',     group: 'Rateizzazioni', label: 'Creare rateizzazioni', write: true },
+  { key: 'finanziamenti.modifica', group: 'Rateizzazioni', label: 'Modificare rateizzazioni e piani rate', write: true },
+  { key: 'finanziamenti.elimina',  group: 'Rateizzazioni', label: 'Eliminare le rateizzazioni', write: true },
+  { key: 'finanziamenti.rate',     group: 'Rateizzazioni', label: 'Pagare e riaprire le rate', write: true },
+  { key: 'finanziamenti.allegati', group: 'Rateizzazioni', label: 'Gestire gli allegati delle rateizzazioni', write: true },
 
-  { key: 'anagrafiche.view',   group: 'Anagrafiche',   label: 'Consultare aziende, conti, categorie, fornitori, regole' },
-  { key: 'anagrafiche.manage', group: 'Anagrafiche',   label: 'Gestire aziende, conti, categorie, fornitori, regole' },
+  // ---- Anagrafiche (una view di area + azioni per singola entità) ----
+  { key: 'anagrafiche.view',     group: 'Anagrafiche',    label: 'Consultare aziende, conti, categorie, fornitori, regole' },
+  { key: 'aziende.crea',         group: 'Anagrafiche',    label: 'Creare aziende', write: true },
+  { key: 'aziende.modifica',     group: 'Anagrafiche',    label: 'Modificare le aziende', write: true },
+  { key: 'aziende.elimina',      group: 'Anagrafiche',    label: 'Eliminare le aziende', write: true },
+  { key: 'conti.crea',           group: 'Anagrafiche',    label: 'Creare conti', write: true },
+  { key: 'conti.modifica',       group: 'Anagrafiche',    label: 'Modificare i conti', write: true },
+  { key: 'conti.elimina',        group: 'Anagrafiche',    label: 'Eliminare i conti', write: true },
+  { key: 'categorie.crea',       group: 'Anagrafiche',    label: 'Creare categorie', write: true },
+  { key: 'categorie.modifica',   group: 'Anagrafiche',    label: 'Modificare le categorie', write: true },
+  { key: 'categorie.elimina',    group: 'Anagrafiche',    label: 'Eliminare le categorie', write: true },
+  { key: 'fornitori.crea',       group: 'Anagrafiche',    label: 'Creare fornitori', write: true },
+  { key: 'fornitori.modifica',   group: 'Anagrafiche',    label: 'Modificare i fornitori', write: true },
+  { key: 'fornitori.elimina',    group: 'Anagrafiche',    label: 'Eliminare i fornitori', write: true },
+  { key: 'regole.crea',          group: 'Anagrafiche',    label: 'Creare regole di auto-categorizzazione', write: true },
+  { key: 'regole.modifica',      group: 'Anagrafiche',    label: 'Modificare le regole e riapplicarle', write: true },
+  { key: 'regole.elimina',       group: 'Anagrafiche',    label: 'Eliminare le regole', write: true },
 
-  { key: 'impostazioni.manage', group: 'Configurazione', label: 'Gestire le impostazioni e l\'aggiornamento software' },
-  { key: 'dati.export',        group: 'Configurazione', label: 'Esportare il backup JSON' },
-  { key: 'dati.import',        group: 'Configurazione', label: 'Importare/sostituire i dati (operazione totale)' },
-  { key: 'utenti.manage',      group: 'Configurazione', label: 'Gestire utenti e permessi', adminOnly: true },
+  // ---- Configurazione (non concorrono a DATA_MANAGE) ----
+  { key: 'impostazioni.manage',  group: 'Configurazione', label: 'Gestire aspetto e manutenzione' },
+  { key: 'software.aggiorna',    group: 'Configurazione', label: 'Controllare e installare gli aggiornamenti software' },
+  { key: 'dati.export',          group: 'Configurazione', label: 'Esportare il backup JSON' },
+  { key: 'dati.import',          group: 'Configurazione', label: 'Importare/sostituire i dati (operazione totale)' },
+  { key: 'dati.reset',           group: 'Configurazione', label: 'Azzerare tutti i dati' },
+  { key: 'utenti.manage',        group: 'Configurazione', label: 'Gestire utenti e permessi', adminOnly: true },
 ];
 
 // Voci di navigazione: ognuna richiede un permesso (`perm`). La voce Impostazioni
 // è raggiungibile con UNO QUALSIASI dei permessi in `any` (contiene sotto-sezioni
-// export/import gestite da permessi distinti).
+// export/import/reset/aggiornamento gestite da permessi distinti).
 export const NAV = [
   { key: 'dash',   icon: '◷',  label: 'Dashboard',       perm: 'dashboard.view' },
   { key: 'mov',    icon: '↕',  label: 'Movimenti',       perm: 'movimenti.view' },
@@ -60,15 +106,15 @@ export const NAV = [
   { key: 'pnl',    icon: '📊', label: 'Conto economico', perm: 'pnl.view' },
   { key: 'anag',   icon: '👤', label: 'Anagrafiche',     perm: 'anagrafiche.view' },
   { key: 'utenti', icon: '👥', label: 'Utenti',          perm: 'utenti.manage' },
-  { key: 'set',    icon: '⚙',  label: 'Impostazioni',    perm: 'impostazioni.manage', any: ['impostazioni.manage', 'dati.export', 'dati.import'] },
+  { key: 'set',    icon: '⚙',  label: 'Impostazioni',    perm: 'impostazioni.manage', any: ['impostazioni.manage', 'software.aggiorna', 'dati.export', 'dati.import', 'dati.reset'] },
 ];
 
-// Permessi che abilitano la scrittura dei DATI (collezioni). Servono alla guardia
-// grossolana su POST /api/changes: chi non ne ha nessuno è di sola lettura.
-export const DATA_MANAGE = [
-  'movimenti.manage', 'fatture.manage', 'programmati.manage',
-  'finanziamenti.manage', 'anagrafiche.manage',
-];
+// Permessi che abilitano la scrittura dei DATI (collezioni). Derivati dal flag
+// `write` del catalogo: sono le azioni crea/modifica/elimina/importa/riconcilia/
+// pagamenti/esegui/rate/allegati di ogni entità (esclusi i .view, gli .esporta e
+// le chiavi di Configurazione). Servono alla guardia grossolana su POST /api/changes:
+// chi non ne ha nessuno è di sola lettura.
+export const DATA_MANAGE = PERMISSIONS.filter((p) => p.write).map((p) => p.key);
 
 const PERM_INDEX = new Map(PERMISSIONS.map((p) => [p.key, p]));
 

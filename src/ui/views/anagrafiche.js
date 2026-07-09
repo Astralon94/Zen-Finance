@@ -44,14 +44,14 @@ export function render() {
 }
 
 function companies() {
-  let h = `${can('anagrafiche.manage') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newco>+ Nuova azienda</button></div>' : ''}<div class="list">`;
+  let h = `${can('aziende.crea') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newco>+ Nuova azienda</button></div>' : ''}<div class="list">`;
   data.companies.forEach(c => {
     h += `<div class="row click" data-co="${c.id}"><div class="emoji">${c.emoji || '🏢'}</div><div class="mid"><div class="t1">${esc(c.name)}</div><div class="t2">${c.piva ? 'P.IVA ' + esc(c.piva) : ''}</div></div></div>`;
   });
   return h + `</div>`;
 }
 function accounts() {
-  let h = `${can('anagrafiche.manage') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newacc>+ Nuovo conto</button></div>' : ''}<div class="list">`;
+  let h = `${can('conti.crea') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newacc>+ Nuovo conto</button></div>' : ''}<div class="list">`;
   data.accounts.forEach(a => {
     const k = accKind(a), bal = balanceOf(a.id);
     const sub = `${esc(co(a.companyId)?.name || '')} · ${kindLabel(k)}${a.excluded ? ' · escluso' : ''}`;
@@ -65,7 +65,7 @@ function accounts() {
 }
 function suppliers() {
   const list = data.suppliers.slice().sort((a, b) => a.name.localeCompare(b.name));
-  let h = `${can('anagrafiche.manage') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newsup>+ Nuovo fornitore</button></div>' : ''}`;
+  let h = `${can('fornitori.crea') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newsup>+ Nuovo fornitore</button></div>' : ''}`;
   if (!list.length) return h + `<div class="card empty">Nessun fornitore. Vengono creati anche automaticamente importando le fatture.</div>`;
   h += `<div class="list">`;
   list.forEach(s => {
@@ -74,7 +74,7 @@ function suppliers() {
   return h + `</div>`;
 }
 function categories() {
-  let h = `${can('anagrafiche.manage') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newcat>+ Nuova categoria</button></div>' : ''}<div class="list">`;
+  let h = `${can('categorie.crea') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newcat>+ Nuova categoria</button></div>' : ''}<div class="list">`;
   data.categories.forEach(c => {
     h += `<div class="row click" data-cat="${c.id}"><div class="emoji">${c.emoji || '•'}</div><div class="mid"><div class="t1">${esc(c.name)}</div><div class="t2">${c.type === 'income' ? 'Ricavo' : 'Costo'}${c.neutral ? ' · neutra' : ''}</div></div></div>`;
   });
@@ -82,10 +82,9 @@ function categories() {
 }
 
 function rules() {
-  let h = can('anagrafiche.manage') ? `<div class="btnrow" style="margin-bottom:12px">
-    <button class="btn primary" data-newrule>+ Nuova regola</button>
-    <button class="btn" data-reapply>↻ Riapplica alle esistenti</button>
-  </div>` : '';
+  const rNew = can('regole.crea') ? '<button class="btn primary" data-newrule>+ Nuova regola</button>' : '';
+  const rReapply = can('regole.modifica') ? '<button class="btn" data-reapply>↻ Riapplica alle esistenti</button>' : '';
+  let h = (rNew || rReapply) ? `<div class="btnrow" style="margin-bottom:12px">${rNew}${rReapply}</div>` : '';
   if (!data.rules.length) return h + `<div class="card empty">Nessuna regola.<br><span class="muted">Le regole assegnano automaticamente categoria, fornitore e nome ai movimenti, leggendo la descrizione della banca.</span></div>`;
 
   // filtri per ambito/stato + ricerca
@@ -144,13 +143,15 @@ export function bind(root) {
 // ---- editors ----
 function editCompany(id) {
   const c = id ? data.companies.find(x => x.id === id) : null;
-  const w = can('anagrafiche.manage');
+  const wSave = id ? can('aziende.modifica') : can('aziende.crea');
+  const wDel = !!id && can('aziende.elimina');
+  const w = wSave;   // editabilità dei campi + label Annulla/Salva
   openSheet(`<h2>${id ? 'Modifica azienda' : 'Nuova azienda'}</h2>
     <div class="frow"><div class="field" style="flex:0 0 80px"><label>Emoji</label><input id="c_em" value="${esc(c?.emoji || '🏢')}"></div>
       <div class="field"><label>Nome</label><input id="c_nm" value="${esc(c?.name || '')}"></div></div>
     <div class="field"><label>P.IVA</label><input id="c_pi" value="${esc(c?.piva || '')}"></div>
     <div class="field"><label>Note</label><input id="c_no" value="${esc(c?.note || '')}"></div>
-    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       const g = x => sheet.querySelector(x).value.trim();
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
@@ -160,7 +161,7 @@ function editCompany(id) {
         if (id) Object.assign(c, rec); else data.companies.push({ id: uid(), color: '#545ea6', ...rec });
         save(); closeSheet(); toast('Salvato ✓');
       });
-      if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare l\'azienda?', 'Conti, movimenti e fatture collegati resteranno ma orfani.', 'Elimina', () => {
+      if (wDel) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare l\'azienda?', 'Conti, movimenti e fatture collegati resteranno ma orfani.', 'Elimina', () => {
         data.companies = data.companies.filter(x => x.id !== id);
         if (data.settings.activeCompany === id) data.settings.activeCompany = null;
         save(); closeSheet(); toast('Eliminata');
@@ -171,7 +172,10 @@ function editCompany(id) {
 
 function editAccount(id) {
   const a = id ? data.accounts.find(x => x.id === id) : null;
-  const w = can('anagrafiche.manage');
+  const wSave = id ? can('conti.modifica') : can('conti.crea');
+  const wDel = !!id && can('conti.elimina');
+  const wCard = can('movimenti.crea');   // "salda estratto conto" carta = crea un movimento
+  const w = wSave;   // editabilità dei campi + label Annulla/Salva
   const cid = a?.companyId || data.companies[0]?.id;
   const curKind = accKind(a);
   const kindOpts = ACCOUNT_KINDS.map(k => `<option value="${k.v}" ${curKind === k.v ? 'selected' : ''}>${k.emoji} ${k.label}</option>`).join('');
@@ -187,8 +191,8 @@ function editAccount(id) {
     <div class="field" id="row_link"><label>Conto collegato (addebito estratto conto)</label><select id="a_link">${linkOpts}</select></div>
     <div class="field" id="row_excl"><label><input type="checkbox" id="a_ex" ${a?.excluded ? 'checked' : ''}> Escludi da liquidità e conto economico</label></div>
     <div class="muted" id="row_hint" style="font-size:12px;margin:-2px 2px 8px"></div>
-    ${id && curKind === 'credit' && w ? `<div class="btnrow" id="row_settle" style="margin-bottom:6px"><button class="btn" data-settle>💳 Salda estratto conto</button><span class="muted" style="align-self:center;font-size:12.5px">debito ${fmt(cardDebt(a))}</span></div>` : ''}
-    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
+    ${id && curKind === 'credit' && wCard ? `<div class="btnrow" id="row_settle" style="margin-bottom:6px"><button class="btn" data-settle>💳 Salda estratto conto</button><span class="muted" style="align-self:center;font-size:12.5px">debito ${fmt(cardDebt(a))}</span></div>` : ''}
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       const g = x => sheet.querySelector(x);
       const HINTS = {
@@ -221,7 +225,7 @@ function editAccount(id) {
         if (id) Object.assign(a, rec); else data.accounts.push({ id: uid(), ...rec });
         save(); closeSheet(); toast('Salvato ✓');
       });
-      if (id && w) g('[data-del]').onclick = () => confirmDialog('Eliminare il conto?', 'I movimenti collegati resteranno ma senza conto.', 'Elimina', () => {
+      if (wDel) g('[data-del]').onclick = () => confirmDialog('Eliminare il conto?', 'I movimenti collegati resteranno ma senza conto.', 'Elimina', () => {
         data.accounts = data.accounts.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminato');
       }, { danger: true });
       if (!w) roLock(sheet);
@@ -277,7 +281,9 @@ function openCardSettle(card) {
 
 function editSupplier(id) {
   const s = id ? data.suppliers.find(x => x.id === id) : null;
-  const w = can('anagrafiche.manage');
+  const wSave = id ? can('fornitori.modifica') : can('fornitori.crea');
+  const wDel = !!id && can('fornitori.elimina');
+  const w = wSave;   // editabilità dei campi + label Annulla/Salva
   openSheet(`<h2>${id ? 'Modifica fornitore' : 'Nuovo fornitore'}</h2>
     <div class="field"><label>Nome</label><input id="s_nm" value="${esc(s?.name || '')}"></div>
     <div class="frow"><div class="field"><label>P.IVA</label><input id="s_pi" value="${esc(s?.piva || '')}"></div>
@@ -285,7 +291,7 @@ function editSupplier(id) {
     <div class="field"><label>IBAN</label><input id="s_ib" value="${esc(s?.iban || '')}"></div>
     <div class="field"><label>Email</label><input id="s_em" value="${esc(s?.email || '')}"></div>
     <div class="field"><label>Note</label><input id="s_no" value="${esc(s?.note || '')}"></div>
-    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       const g = x => sheet.querySelector(x).value.trim();
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
@@ -295,7 +301,7 @@ function editSupplier(id) {
         if (id) Object.assign(s, rec); else data.suppliers.push({ id: uid(), type: 'supplier', ...rec });
         save(); closeSheet(); toast('Salvato ✓');
       });
-      if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il fornitore?', 'Le fatture collegate manterranno il nome.', 'Elimina', () => {
+      if (wDel) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il fornitore?', 'Le fatture collegate manterranno il nome.', 'Elimina', () => {
         const name = s.name;
         data.invoices.forEach(inv => { if (inv.supplierId === id) { inv.supplierId = null; inv.supplierName = name; } });
         data.suppliers = data.suppliers.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminato');
@@ -306,13 +312,15 @@ function editSupplier(id) {
 
 function editCategory(id) {
   const c = id ? data.categories.find(x => x.id === id) : null;
-  const w = can('anagrafiche.manage');
+  const wSave = id ? can('categorie.modifica') : can('categorie.crea');
+  const wDel = !!id && can('categorie.elimina');
+  const w = wSave;   // editabilità dei campi + label Annulla/Salva
   openSheet(`<h2>${id ? 'Modifica categoria' : 'Nuova categoria'}</h2>
     <div class="frow"><div class="field" style="flex:0 0 80px"><label>Emoji</label><input id="k_em" value="${esc(c?.emoji || '📌')}"></div>
       <div class="field"><label>Nome</label><input id="k_nm" value="${esc(c?.name || '')}"></div></div>
     <div class="field"><label>Tipo</label><select id="k_ty"><option value="expense" ${c?.type !== 'income' ? 'selected' : ''}>Costo</option><option value="income" ${c?.type === 'income' ? 'selected' : ''}>Ricavo</option></select></div>
     <div class="field"><label><input type="checkbox" id="k_ne" ${c?.neutral ? 'checked' : ''}> Neutra (partita di giro, fuori dal conto economico)</label></div>
-    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
       sheet.querySelector('[data-save]')?.addEventListener('click', () => {
@@ -321,7 +329,7 @@ function editCategory(id) {
         if (id) Object.assign(c, rec); else data.categories.push({ id: uid(), ...rec });
         save(); closeSheet(); toast('Salvato ✓');
       });
-      if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la categoria?', 'I movimenti collegati resteranno senza categoria.', 'Elimina', () => {
+      if (wDel) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la categoria?', 'I movimenti collegati resteranno senza categoria.', 'Elimina', () => {
         data.categories = data.categories.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminata');
       }, { danger: true });
       if (!w) roLock(sheet);

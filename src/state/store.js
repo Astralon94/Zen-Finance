@@ -128,6 +128,16 @@ export async function reloadFromServer() {
   } catch (e) { return false; }
 }
 
+// Azzeramento totale: passa da POST /api/reset (guardia `dati.reset`), NON dalla PUT
+// (guardia `dati.import`) — così il gate del pulsante UI e quello backend coincidono.
+export async function resetAll() {
+  try {
+    const res = await authFetch('/api/reset', { method: 'POST' });
+    if (!res.ok) return false;
+    return await reloadFromServer();
+  } catch (e) { return false; }
+}
+
 // Forza il salvataggio delle modifiche locali sovrascrivendo l'altra scheda (scelta "Forza" nel conflitto):
 // allinea il baseRev alla revisione attuale del server, così il prossimo changeset viene accettato.
 export function forceSave() {

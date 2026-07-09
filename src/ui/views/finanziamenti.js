@@ -31,7 +31,7 @@ function list() {
   const loans = loansInScope(activeCompany());
   const totRes = round2(loans.reduce((s, l) => s + loanResiduo(l), 0));
   let h = `<div class="pagehead"><h1>Rateizzazioni</h1><span class="sub">${loans.length ? 'debito residuo ' + fmt(totRes) : ''}</span></div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px">${can('finanziamenti.manage') ? '<button class="btn primary" data-new>+ Nuova rateizzazione</button>' : ''}${loans.length ? '<button class="btn" data-export-list>⤓ Esporta PDF</button>' : ''}</div>`;
+  h += `<div class="btnrow" style="margin-bottom:12px">${can('finanziamenti.crea') ? '<button class="btn primary" data-new>+ Nuova rateizzazione</button>' : ''}${loans.length ? '<button class="btn" data-export-list>⤓ Esporta PDF</button>' : ''}</div>`;
   if (!loans.length) return h + `<div class="card empty">Nessuna rateizzazione.<br><span class="muted">Aggiungi mutui, prestiti, leasing o debiti con il loro piano rate.</span></div>`;
   loans.forEach(l => {
     const tot = insts(l).length, pc = paidCount(l), pct = tot ? Math.round(pc / tot * 100) : 0;
@@ -78,14 +78,14 @@ function detail(l) {
   else h += `<div class="list">${list.map(i => instRow(l, i)).join('')}</div>`;
   h += `<div class="section-title">Allegati</div>`;
   h += attachmentsBlock(l);
-  const w = can('finanziamenti.manage');
-  h += `<div class="btnrow" style="margin-top:12px">${w ? '<button class="btn" data-edit>Modifica</button>' : ''}<button class="btn" data-export-loan>⤓ PDF</button>${w ? '<button class="btn danger" data-del>Elimina</button>' : ''}</div>`;
+  const wMod = can('finanziamenti.modifica'), wDel = can('finanziamenti.elimina');
+  h += `<div class="btnrow" style="margin-top:12px">${wMod ? '<button class="btn" data-edit>Modifica</button>' : ''}<button class="btn" data-export-loan>⤓ PDF</button>${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}</div>`;
   return h;
 }
 
 const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
 function attachmentsBlock(l) {
-  const w = can('finanziamenti.manage');
+  const w = can('finanziamenti.allegati');
   const atts = l.attachments || [];
   let h = '';
   if (atts.length) {
@@ -157,7 +157,7 @@ function instRow(l, i) {
     <div class="mid"><div class="t1">Rata ${i.n}${od ? ' <span class="badge b-overdue">scaduta</span>' : ''}</div>
       <div class="t2">${i.date ? fmtDate(i.date) : ''}${paid && i.paidDate ? ' · pagata ' + fmtDate(i.paidDate) : ''}${variance ? ' · piano ' + fmt(i.amount) : ''}</div></div>
     <div class="amt tnum ${paid ? '' : 'neg'}">${fmt(eff)}</div>
-    ${can('finanziamenti.manage') ? (paid ? `<button class="btn sm" data-unpay="${i.id}">↩</button>` : `<button class="btn sm primary" data-pay="${i.id}">✓</button>`) : ''}
+    ${can('finanziamenti.rate') ? (paid ? `<button class="btn sm" data-unpay="${i.id}">↩</button>` : `<button class="btn sm primary" data-pay="${i.id}">✓</button>`) : ''}
   </div>`;
 }
 
@@ -210,6 +210,7 @@ export function bind(root) {
 // ---------- editor finanziamento ----------
 function openLoanEditor(id) {
   const l = id ? data.loans.find(x => x.id === id) : null;
+  const wDel = !!id && can('finanziamenti.elimina');   // eliminare dall'editor richiede il permesso proprio
   const cid = l?.companyId || activeCompany() || data.companies[0]?.id;
   const typeOpts = TYPES.map(t => `<option ${l?.type === t ? 'selected' : ''}>${t}</option>`).join('');
   const pmOpts = ['<option value="">— da definire —</option>']
@@ -251,7 +252,7 @@ function openLoanEditor(id) {
     <div id="p_list" style="margin-top:10px;max-height:34vh;overflow:auto"></div>
     <div class="btnrow" style="margin-top:6px"><button class="btn sm" data-addrata>+ Aggiungi rata</button></div>
     <div class="field" style="margin-top:8px"><label>Note</label><input id="l_note" value="${esc(l?.notes || '')}"></div>
-    <div class="actions">${id ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`;
+    <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`;
   openSheet(html, sheet => {
     const g = x => sheet.querySelector(x);
     let plan = l ? insts(l).map(i => ({ ...i })) : [];   // copia profonda: niente modifiche live su Annulla
@@ -296,14 +297,14 @@ function openLoanEditor(id) {
       };
       if (id) updateLoan(l, rec); else { const nl = addLoan(rec); currentId = nl.id; }
       closeSheet(); toast('Rateizzazione salvata ✓');    };
-    if (id) g('[data-del]')?.addEventListener('click', () => confirmDialog('Eliminare la rateizzazione?', 'Verranno rimossi anche i movimenti delle rate creati da qui.', 'Elimina', () => { deleteLoan(l); currentId = null; closeSheet(); toast('Eliminato'); }, { danger: true }));
+    if (wDel) g('[data-del]')?.addEventListener('click', () => confirmDialog('Eliminare la rateizzazione?', 'Verranno rimossi anche i movimenti delle rate creati da qui.', 'Elimina', () => { deleteLoan(l); currentId = null; closeSheet(); toast('Eliminato'); }, { danger: true }));
   });
 }
 
 // ---------- pagamento rata ----------
 export function openInstPay(l, i) {
   if (!i) return;
-  const w = can('finanziamenti.manage');
+  const w = can('finanziamenti.rate');
   const cands = candidates(l, i);
   const candHtml = cands.map(t => `<div class="row click" data-pick="${t.id}">
       <div class="emoji">⬇️</div>

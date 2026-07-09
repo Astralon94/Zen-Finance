@@ -177,7 +177,7 @@ async function api(req, res, url) {
   }
 
   if (resource === 'reset' && method === 'POST') {
-    if (!need('dati.import')) return forbid();
+    if (!need('dati.reset')) return forbid();
     return json(res, 200, { ok: true, ...resetData() });
   }
 
@@ -189,7 +189,7 @@ async function api(req, res, url) {
     }
     // Controlla ora (interroga il manifest su GitHub)
     if (method === 'POST' && id === 'check') {
-      if (!need('impostazioni.manage')) return forbid();
+      if (!need('software.aggiorna')) return forbid();
       if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
       try {
         const r = await updater.checkUpdate(UPDATE_URL, __dirname);
@@ -199,7 +199,7 @@ async function api(req, res, url) {
     }
     // Scarica e installa l'aggiornamento, poi esce con codice 42 (il supervisore riavvia sul codice nuovo).
     if (method === 'POST' && id === 'install') {
-      if (!need('impostazioni.manage')) return forbid();
+      if (!need('software.aggiorna')) return forbid();
       if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
       try {
         const chk = await updater.checkUpdate(UPDATE_URL, __dirname);
