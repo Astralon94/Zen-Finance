@@ -60,6 +60,29 @@ button { cursor: pointer; border: none; background: none; }
 .chip:disabled, .chip[disabled] { opacity: .45; pointer-events: none; cursor: default; }
 input:disabled, select:disabled, textarea:disabled { opacity: .7; cursor: default; }
 
+/* ---- Checkbox: stile custom con spunta VISIBILE (light+dark) ----
+   Molte checkbox usano .selbox (classe nata per i <select>), che con appearance:none
+   nascondeva la spunta nativa. Qui diamo alle checkbox uno stile proprio e coerente:
+   riquadro con bordo da spento, riempito d'accento con spunta bianca da acceso.
+   La specificità di input[type=checkbox] batte .selbox, quindi vale ovunque. */
+input[type="checkbox"] {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; margin: 0; padding: 0; flex-shrink: 0; box-sizing: border-box;
+  border: 1.5px solid var(--line); border-radius: 5px;
+  background: var(--card); background-image: none;
+  display: inline-grid; place-content: center; vertical-align: middle; cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+input[type="checkbox"]::before {
+  content: ""; width: 11px; height: 11px; transform: scale(0);
+  transition: transform .12s ease-in-out; background-color: #fff;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
+
 /* ---- layout ---- */
 #view { max-width: 920px; margin: 0 auto; padding: 28px 20px 100px; }
 .pagehead { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 24px; }

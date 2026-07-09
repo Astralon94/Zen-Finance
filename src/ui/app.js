@@ -32,7 +32,7 @@ const VIEWS = {
   set: { mod: settings, title: 'Impostazioni', icon: '⚙' },
   utenti: { mod: utenti, title: 'Utenti', icon: '👥' }
 };
-const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'set', 'utenti'];
+const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'utenti', 'set'];
 
 let current = 'dash';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');

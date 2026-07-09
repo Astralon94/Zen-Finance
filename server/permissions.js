@@ -59,8 +59,8 @@ export const NAV = [
   { key: 'fin',    icon: '🏦', label: 'Rateizzazioni',   perm: 'finanziamenti.view' },
   { key: 'pnl',    icon: '📊', label: 'Conto economico', perm: 'pnl.view' },
   { key: 'anag',   icon: '👤', label: 'Anagrafiche',     perm: 'anagrafiche.view' },
-  { key: 'set',    icon: '⚙',  label: 'Impostazioni',    perm: 'impostazioni.manage', any: ['impostazioni.manage', 'dati.export', 'dati.import'] },
   { key: 'utenti', icon: '👥', label: 'Utenti',          perm: 'utenti.manage' },
+  { key: 'set',    icon: '⚙',  label: 'Impostazioni',    perm: 'impostazioni.manage', any: ['impostazioni.manage', 'dati.export', 'dati.import'] },
 ];
 
 // Permessi che abilitano la scrittura dei DATI (collezioni). Servono alla guardia
