@@ -1,11 +1,15 @@
 // ============ Editor regola condiviso (Anagrafiche + da movimento) ============
 import { data, save } from '../state/store.js';
+import { can } from '../state/auth.js';
 import { esc, uid } from '../domain/util.js';
 import { openSheet, closeSheet, toast, confirmDialog } from './dom.js';
 import { categoryOptions, supplierPicker, bindCombos } from './forms.js';
 
 // id = regola esistente (modifica) | null (nuova). prefill = valori iniziali per la nuova regola.
 export function openRuleEditor(id, prefill = {}, onSaved) {
+  // Le regole sono un'anagrafica ma possono anche nascere da un movimento: la scrittura
+  // è ammessa a chi gestisce anagrafiche oppure movimenti (entrambi valgono lato backend).
+  const w = can('anagrafiche.manage') || can('movimenti.manage');
   const r = id ? data.rules.find(x => x.id === id) : null;
   const v = {
     keyword: r?.keyword ?? prefill.keyword ?? '',
@@ -23,13 +27,13 @@ export function openRuleEditor(id, prefill = {}, onSaved) {
     <div class="field"><label>Imposta fornitore/cliente</label>${supplierPicker('r_sup', v.supplierId)}</div>
     <div class="field"><label>Nome visualizzato</label><input id="r_name" value="${esc(v.displayName)}" placeholder="facoltativo"></div>
     <div class="field"><label><input type="checkbox" id="r_en" ${v.enabled ? 'checked' : ''}> Attiva</label></div>
-    <div class="actions">${id ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`,
+    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
       bindCombos(sheet);
       let scope = v.appliesTo;
       sheet.querySelectorAll('#r_scope [data-scope]').forEach(b => b.onclick = () => { scope = b.dataset.scope; sheet.querySelectorAll('#r_scope .chip').forEach(c => c.classList.toggle('on', c.dataset.scope === scope)); });
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
-      sheet.querySelector('[data-save]').onclick = () => {
+      sheet.querySelector('[data-save]')?.addEventListener('click', () => {
         const keyword = sheet.querySelector('#r_kw').value.trim();
         if (!keyword) { toast('Inserisci una parola chiave'); return; }
         const rec = {
@@ -43,7 +47,12 @@ export function openRuleEditor(id, prefill = {}, onSaved) {
         if (id) Object.assign(r, rec); else data.rules.push({ id: uid(), ...rec });
         save(); closeSheet(); toast('Regola salvata ✓');
         if (onSaved) onSaved();
-      };
-      if (id) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la regola?', '', 'Elimina', () => { data.rules = data.rules.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminata'); }, { danger: true });
+      });
+      if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare la regola?', '', 'Elimina', () => { data.rules = data.rules.filter(x => x.id !== id); save(); closeSheet(); toast('Eliminata'); }, { danger: true });
+      // Sola lettura (regola aperta senza permesso di scrittura): campi e chip inerti.
+      if (!w) {
+        sheet.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+        sheet.querySelectorAll('#r_scope .chip').forEach(b => { b.disabled = true; });
+      }
     });
 }

@@ -1,5 +1,6 @@
 // ============ Vista Programmati (scadenziario) ============
 import { data } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, pad2 } from '../../domain/util.js';
 import { activeCompany, acc, co, cat, txLabel } from '../../domain/finance.js';
 import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
@@ -65,8 +66,9 @@ export function render() {
   const chip = (v, l) => `<button class="chip ${fKind === v ? 'on' : ''}" data-k="${v}">${l}</button>`;
   const kpi = (l, v, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="val tnum ${c}">${fmt(v)}</div></div>`;
 
+  const w = can('programmati.manage');
   let h = `<div class="pagehead"><h1>Programmati</h1><span class="sub">scadenziario</span></div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuovo programmato</button>${entries.length ? '<button class="btn" data-export>⤓ Esporta PDF</button>' : ''}</div>`;
+  h += `<div class="btnrow" style="margin-bottom:12px">${w ? '<button class="btn primary" data-new>+ Nuovo programmato</button>' : ''}${entries.length ? '<button class="btn" data-export>⤓ Esporta PDF</button>' : ''}</div>`;
   h += `<div class="grid k3">
     ${kpi('Addebiti previsti', debP, debP > 0 ? 'neg' : '')}
     ${kpi('Accrediti previsti', creP, creP > 0 ? 'pos' : '')}
@@ -104,7 +106,7 @@ function rowEntry(e) {
     <div class="emoji" data-open="${e.key}" style="cursor:pointer">${icon}</div>
     <div class="mid" data-open="${e.key}" style="cursor:pointer"><div class="t1">${esc(e.desc)}${badges}</div><div class="t2">${e.date ? fmtDate(e.date) : 'senza data'}</div></div>
     <div class="amt tnum ${e.noAmount ? '' : (e.kind === 'credit' ? 'pos' : 'neg')}">${amt}</div>
-    <button class="btn sm primary" data-complete="${e.key}">✓</button>
+    ${can('programmati.manage') ? `<button class="btn sm primary" data-complete="${e.key}">✓</button>` : ''}
   </div>`;
 }
 
@@ -119,7 +121,7 @@ function rowDone(e) {
     <div class="emoji">✅</div>
     <div class="mid"><div class="t1">${esc(e.desc)}${e.loan ? ' <span class="badge b-unpaid">rateizz.</span>' : ''}</div><div class="t2">completato ${e.when ? fmtDate(e.when) : ''}</div></div>
     <div class="amt tnum">${e.amount == null ? '<span class="muted">—</span>' : `${e.kind === 'credit' ? '+' : '−'}${fmt(e.amount)}`}</div>
-    <button class="btn sm" data-reopen="${e.key}">↩</button>
+    ${can('programmati.manage') ? `<button class="btn sm" data-reopen="${e.key}">↩</button>` : ''}
   </div>`;
 }
 
@@ -151,7 +153,7 @@ export function bind(root) {
   root.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { fKind = b.dataset.k; rerender(); });
   root.querySelector('[data-manual]').onclick = () => { manualOnly = !manualOnly; rerender(); };
   root.querySelector('[data-done]').onclick = () => { showDone = !showDone; rerender(); };
-  root.querySelector('[data-new]').onclick = () => openScheduled(null);
+  root.querySelector('[data-new]')?.addEventListener('click', () => openScheduled(null));
   root.querySelector('[data-export]')?.addEventListener('click', exportProgrammati);
   root.querySelectorAll('[data-open]').forEach(el => el.onclick = () => {
     const key = el.dataset.open;
@@ -173,6 +175,7 @@ export function bind(root) {
 // ---- editor programmato ----
 export function openScheduled(id) {
   const s = id ? data.scheduled.find(x => x.id === id) : null;
+  const w = can('programmati.manage');
   const kind = s?.kind || 'debit';
   const cid = s?.companyId || activeCompany() || data.companies[0]?.id;
   const html = `
@@ -190,7 +193,7 @@ export function openScheduled(id) {
     <div class="field"><label>Descrizione</label><input id="sc_desc" value="${esc(s?.description || '')}" placeholder="es. RID Enel · Affitto"></div>
     <div id="sc_dyn"></div>
     <div class="field"><label><input type="checkbox" id="sc_manual" ${s?.manual ? 'checked' : ''}> Manuale (da eseguire a mano, evidenziato)</label></div>
-    <div class="actions">${id ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`;
+    <div class="actions">${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`;
   openSheet(html, sheet => {
     let curKind = kind;
     const coSel = sheet.querySelector('#sc_co');
@@ -207,7 +210,7 @@ export function openScheduled(id) {
     sheet.querySelectorAll('#sc_kind [data-k]').forEach(b => b.onclick = () => { curKind = b.dataset.k; sheet.querySelectorAll('#sc_kind .chip').forEach(c => c.classList.toggle('on', c.dataset.k === curKind)); renderDyn(); });
     coSel.onchange = renderDyn;
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const amount = parseAmount(sheet.querySelector('#sc_amt').value); // null se vuoto → promemoria senza importo
       const rec = {
         kind: curKind, companyId: coSel.value, amount: amount != null ? amount : null, date: sheet.querySelector('#sc_date').value || todayStr(),
@@ -218,8 +221,13 @@ export function openScheduled(id) {
       };
       if (id) updateScheduled(s, rec); else addScheduled(rec);
       closeSheet(); toast('Programmato salvato ✓');
-    };
-    if (id) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il programmato?', '', 'Elimina', () => { deleteScheduled(s); closeSheet(); toast('Eliminato'); }, { danger: true });
+    });
+    if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il programmato?', '', 'Elimina', () => { deleteScheduled(s); closeSheet(); toast('Eliminato'); }, { danger: true });
+    // Sola lettura senza programmati.manage: campi e chip inerti, resta solo "Chiudi".
+    if (!w) {
+      sheet.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+      sheet.querySelectorAll('#sc_kind .chip').forEach(b => { b.disabled = true; });
+    }
   });
 }
 

@@ -1,6 +1,7 @@
 // ============ Vista Impostazioni ============
 import { data, save, setData, exportJSON, importJSON } from '../../state/store.js';
 import { DEFAULT_DATA } from '../../state/model.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, todayStr, fmtDateFull } from '../../domain/util.js';
 import { toast, confirmDialog } from '../dom.js';
 import { backfillMatchNames } from '../../domain/backfill.js';
@@ -9,22 +10,32 @@ import { co } from '../../domain/finance.js';
 import { applyTheme } from '../app.js';
 
 export function render() {
+  const cManage = can('impostazioni.manage');   // aspetto, manutenzione, aggiornamento software
+  const cExport = can('dati.export');            // esporta backup
+  const cImport = can('dati.import');            // importa/sostituisci + reset
+  const cFatt = can('fatture.manage');           // elimina fattura
   const t = data.settings.theme || 'auto';
   const opt = (v, l) => `<button class="chip ${t === v ? 'on' : ''}" data-th="${v}">${l}</button>`;
   let h = `<div class="pagehead"><h1>Impostazioni</h1></div>`;
+  let any = false;   // qualche sezione operativa mostrata?
 
-  h += `<div class="section-title">Aspetto</div>`;
-  h += `<div class="chips">${opt('auto', 'Automatico')}${opt('light', 'Chiaro')}${opt('dark', 'Scuro')}</div>`;
+  if (cManage) {
+    any = true;
+    h += `<div class="section-title">Aspetto</div>`;
+    h += `<div class="chips">${opt('auto', 'Automatico')}${opt('light', 'Chiaro')}${opt('dark', 'Scuro')}</div>`;
+  }
 
-  h += `<div class="section-title">Backup</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">I dati sono salvati nel <b>database locale</b> del server (con backup automatici lato server). Puoi comunque esportare o importare un backup completo in formato <b>JSON</b> — utile anche per trasferire i dati dalla vecchia versione.</div>
-    <div class="btnrow">
-      <button class="btn" data-export>Esporta backup (JSON)</button>
-      <button class="btn" data-import>Importa backup (JSON)…</button>
-      <input type="file" id="imp_file" accept="application/json,.json" style="display:none">
-    </div>
-  </div>`;
+  if (cExport || cImport) {
+    any = true;
+    h += `<div class="section-title">Backup</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">I dati sono salvati nel <b>database locale</b> del server (con backup automatici lato server). Puoi comunque esportare o importare un backup completo in formato <b>JSON</b> — utile anche per trasferire i dati dalla vecchia versione.</div>
+      <div class="btnrow">
+        ${cExport ? '<button class="btn" data-export>Esporta backup (JSON)</button>' : ''}
+        ${cImport ? '<button class="btn" data-import>Importa backup (JSON)…</button><input type="file" id="imp_file" accept="application/json,.json" style="display:none">' : ''}
+      </div>
+    </div>`;
+  }
 
   h += `<div class="section-title">Archivio</div>`;
   h += `<div class="card">
@@ -38,39 +49,53 @@ export function render() {
     </table>
   </div>`;
 
-  h += `<div class="section-title">Manutenzione</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">Riallinea i movimenti <b>già abbinati</b> (rate, scadenze, fatture) al nome e categoria dell'elemento collegato. Utile una tantum dopo l'aggiornamento. <b>Attenzione:</b> sovrascrive eventuali nomi personalizzati a mano dopo l'abbinamento (riaprendo l'elemento il nome precedente viene comunque ripristinato).</div>
-    <button class="btn" data-backfill>Riallinea nomi movimenti abbinati</button>
-  </div>`;
+  if (cManage) {
+    any = true;
+    h += `<div class="section-title">Manutenzione</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Riallinea i movimenti <b>già abbinati</b> (rate, scadenze, fatture) al nome e categoria dell'elemento collegato. Utile una tantum dopo l'aggiornamento. <b>Attenzione:</b> sovrascrive eventuali nomi personalizzati a mano dopo l'abbinamento (riaprendo l'elemento il nome precedente viene comunque ripristinato).</div>
+      <button class="btn" data-backfill>Riallinea nomi movimenti abbinati</button>
+    </div>`;
 
-  h += `<div class="card" style="margin-top:10px">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">Segna come <b>Gestiti</b> tutti i movimenti (di <b>tutte le aziende</b>) fino alla data scelta, compresa. Operazione una-tantum per sistemare lo storico. Trasferimenti e movimenti già collegati restano invariati (sono già gestiti).</div>
-    <div class="frow" style="align-items:flex-end;gap:8px">
-      <div class="field" style="margin:0"><label>Fino al (compreso)</label><input id="mark_date" type="date" value="${todayStr()}"></div>
-      <button class="btn" data-markmanaged>Segna gestiti</button>
-    </div>
-  </div>`;
+    h += `<div class="card" style="margin-top:10px">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Segna come <b>Gestiti</b> tutti i movimenti (di <b>tutte le aziende</b>) fino alla data scelta, compresa. Operazione una-tantum per sistemare lo storico. Trasferimenti e movimenti già collegati restano invariati (sono già gestiti).</div>
+      <div class="frow" style="align-items:flex-end;gap:8px">
+        <div class="field" style="margin:0"><label>Fino al (compreso)</label><input id="mark_date" type="date" value="${todayStr()}"></div>
+        <button class="btn" data-markmanaged>Segna gestiti</button>
+      </div>
+    </div>`;
+  }
 
-  h += `<div class="section-title">Elimina una fattura</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">Operazione eccezionale: elimina una fattura e <b>tutti i pagamenti collegati</b>. Cerca la fattura per fornitore o numero.</div>
-    <div class="field" style="margin:0 0 10px"><input id="delinv_q" placeholder="Cerca fornitore o numero…" autocomplete="off"></div>
-    <div class="list" id="delinv_list"></div>
-  </div>`;
+  if (cFatt) {
+    any = true;
+    h += `<div class="section-title">Elimina una fattura</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Operazione eccezionale: elimina una fattura e <b>tutti i pagamenti collegati</b>. Cerca la fattura per fornitore o numero.</div>
+      <div class="field" style="margin:0 0 10px"><input id="delinv_q" placeholder="Cerca fornitore o numero…" autocomplete="off"></div>
+      <div class="list" id="delinv_list"></div>
+    </div>`;
+  }
 
-  h += `<div class="section-title">Aggiornamento software</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">Gli aggiornamenti vengono scaricati da <b>GitHub</b> e installati senza toccare i dati (la cartella <b>data/</b> non viene mai modificata). Il controllo è automatico all'avvio e ogni 12 ore; al termine dell'installazione il server si riavvia da solo.</div>
-    <div class="muted" id="upd_stato" style="font-size:13px;margin-bottom:10px">Versione installata: …</div>
-    <div class="btnrow">
-      <button class="btn" data-updcheck>Controlla ora</button>
-      <button class="btn" data-updinstall style="display:none">Installa e riavvia</button>
-    </div>
-  </div>`;
+  if (cManage) {
+    any = true;
+    h += `<div class="section-title">Aggiornamento software</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Gli aggiornamenti vengono scaricati da <b>GitHub</b> e installati senza toccare i dati (la cartella <b>data/</b> non viene mai modificata). Il controllo è automatico all'avvio e ogni 12 ore; al termine dell'installazione il server si riavvia da solo.</div>
+      <div class="muted" id="upd_stato" style="font-size:13px;margin-bottom:10px">Versione installata: …</div>
+      <div class="btnrow">
+        <button class="btn" data-updcheck>Controlla ora</button>
+        <button class="btn" data-updinstall style="display:none">Installa e riavvia</button>
+      </div>
+    </div>`;
+  }
 
-  h += `<div class="section-title">Zona pericolosa</div>`;
-  h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
+  if (cImport) {
+    any = true;
+    h += `<div class="section-title">Zona pericolosa</div>`;
+    h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
+  }
+
+  if (!any) h += `<div class="card empty">Non hai sezioni modificabili qui.<br><span class="muted">Contatta l'amministratore per ulteriori permessi.</span></div>`;
 
   h += `<div class="muted" style="text-align:center;font-size:12px;margin-top:24px">Zen Finance · <span id="app_ver">v…</span> · server locale</div>`;
   return h;
@@ -90,12 +115,13 @@ export function bind(root) {
     }, { danger: true });
   };
 
-  root.querySelector('[data-backfill]').onclick = () => confirmDialog('Riallineare i nomi?', 'I movimenti già abbinati prenderanno nome e categoria dell\'elemento collegato. Eventuali nomi messi a mano dopo l\'abbinamento verranno sovrascritti.', 'Riallinea', () => {
+  root.querySelector('[data-backfill]')?.addEventListener('click', () => confirmDialog('Riallineare i nomi?', 'I movimenti già abbinati prenderanno nome e categoria dell\'elemento collegato. Eventuali nomi messi a mano dopo l\'abbinamento verranno sovrascritti.', 'Riallinea', () => {
     const n = backfillMatchNames();
     toast(n ? `${n} movimenti riallineati ✓` : 'Nessun movimento da riallineare');
-  });
+  }));
 
-  root.querySelector('[data-markmanaged]').onclick = () => {
+  const markBtn = root.querySelector('[data-markmanaged]');
+  if (markBtn) markBtn.onclick = () => {
     const cutoff = root.querySelector('#mark_date').value;
     if (!cutoff) { toast('Scegli una data'); return; }
     const targets = data.transactions.filter(t => t.date && t.date <= cutoff && mgmtState(t) !== 'managed');
@@ -177,9 +203,9 @@ export function bind(root) {
     } catch { toast('Installazione fallita'); updInstBtn.disabled = false; }
   });
 
-  root.querySelector('[data-wipe]').onclick = () => confirmDialog('Cancellare tutti i dati?', 'Operazione irreversibile. Ne viene comunque tenuto un backup del database lato server.', 'Continua', () => {
+  root.querySelector('[data-wipe]')?.addEventListener('click', () => confirmDialog('Cancellare tutti i dati?', 'Operazione irreversibile. Ne viene comunque tenuto un backup del database lato server.', 'Continua', () => {
     confirmDialog('Sei davvero sicuro?', 'Tutte le aziende, conti, movimenti e fatture verranno eliminati.', 'Cancella tutto', () => {
       setData(DEFAULT_DATA()); toast('Dati cancellati');
     }, { danger: true });
-  }, { danger: true });
+  }, { danger: true }));
 }

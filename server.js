@@ -10,6 +10,12 @@ import { exportData, importData, applyChanges, resetData, seedIfEmpty, counts, g
 import { putAttachment, getAttachment, deleteAttachment } from './server/attachments.js';
 import { backupDb } from './server/db.js';
 import * as updater from './server/updater.js';
+import { createSession, getSession, destroySession, destroySessionsOfUser, verifyPassword } from './server/auth.js';
+import { PERMISSIONS, NAV, RUOLI, hasPermission, canWriteData, assegnabili } from './server/permissions.js';
+import {
+  seedAdminIfEmpty, verifyLogin, utentePubblico, getByIdAttivo, setPassword,
+  listPublic, create as createUser, update as updateUser, remove as removeUser,
+} from './server/users.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, 'public');
@@ -63,19 +69,67 @@ const readRawBody = (req) => new Promise((resolve) => {
   req.on('error', () => resolve(Buffer.alloc(0)));
 });
 
-// Seam autenticazione — PREDISPOSIZIONE multiutenza. Ora no-op: un unico utente locale.
-// Quando servirà, qui si risolverà l'utente dal token e si applicheranno i permessi.
-function currentUser(_req) { return { id: 'local', name: 'Locale', ruolo: 'admin', permessi: [] }; }
+// ---- Autenticazione (multiutenza, Livello A) ----
+// Interruttore anti-lockout: ZEN_AUTH_DISABLED=1 disattiva l'auth (un unico admin
+// locale, comportamento pre-multiutenza). È la via di fuga se il login si rompe o
+// si perde la password (insieme allo script scripts/reset-admin.mjs).
+const AUTH_ON = process.env.ZEN_AUTH_DISABLED !== '1' && process.env.ZEN_AUTH_DISABLED !== 'true';
+// Utente sintetico usato quando l'auth è disattivata (bypass): admin con tutti i permessi.
+const LOCAL_ADMIN = { id: 0, username: 'local', nome: 'Locale', ruolo: 'admin', permessi: [] };
+
+// Risolve l'utente della richiesta dal token di sessione. null = non autenticato.
+// Ritorna { user (pubblico), row (record DB o null), token }.
+function resolveUser(req) {
+  if (!AUTH_ON) return { user: LOCAL_ADMIN, row: null, token: '' };
+  const auth = req.headers['authorization'] || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : (req.headers['x-token'] || '');
+  const s = getSession(token);
+  if (!s) return null;
+  const row = getByIdAttivo(s.userId);
+  if (!row) return null;
+  return { user: utentePubblico(row), row, token };
+}
 
 async function api(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api', <resource>, <id>?]
   const resource = parts[1], id = parts[2];
   const method = req.method;
-  const user = currentUser(req); // sempre presente in questa fase
-  void user;
 
+  // ---- AUTENTICAZIONE: health e login sono PUBBLICI; il resto richiede sessione ----
   if (resource === 'health' && method === 'GET') {
-    return json(res, 200, { ok: true, app: 'zen-finance-server', ...counts() });
+    return json(res, 200, { ok: true, app: 'zen-finance-server', auth: AUTH_ON, ...counts() });
+  }
+  if (resource === 'auth' && id === 'login' && method === 'POST') {
+    if (!AUTH_ON) return json(res, 200, { token: 'local', utente: LOCAL_ADMIN });
+    const b = await readBody(req);
+    const u = verifyLogin(b?.username, b?.password);
+    if (!u) return json(res, 401, { error: 'Credenziali non valide' });
+    return json(res, 200, { token: createSession(u.id), utente: utentePubblico(u) });
+  }
+
+  const me = resolveUser(req);
+  if (!me) return json(res, 401, { error: 'Non autenticato' });
+  const user = me.user;
+  const need = (key) => hasPermission(user, key);
+  const forbid = () => json(res, 403, { error: 'Permesso negato' });
+
+  // Auth self-service (utente corrente).
+  if (resource === 'auth') {
+    if (id === 'me' && method === 'GET') return json(res, 200, { utente: user });
+    if (id === 'logout' && method === 'POST') { if (me.token) destroySession(me.token); return json(res, 200, { ok: true }); }
+    if (id === 'password' && method === 'POST') {
+      if (!AUTH_ON) return json(res, 200, { ok: true });
+      const b = await readBody(req);
+      if (!me.row || !verifyPassword(b?.attuale || '', me.row.password_hash)) return json(res, 400, { error: 'Password attuale errata' });
+      if (!b.nuova || String(b.nuova).length < 4) return json(res, 400, { error: 'La nuova password è troppo corta' });
+      setPassword(me.row.id, b.nuova);
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  // Registro permessi per la UI (gating menu + schermata permessi).
+  if (resource === 'meta' && id === 'permessi' && method === 'GET') {
+    return json(res, 200, { permessi: PERMISSIONS, assegnabili: assegnabili(), nav: NAV, ruoli: RUOLI });
   }
 
   // XML fattura on-demand (lazy-load): NON viaggia nel boot.
@@ -89,8 +143,14 @@ async function api(req, res, url) {
   // Stato completo: GET per il boot (leggero, senza xml), PUT per sostituzione totale.
   // GET /api/data?full=1 include gli xml (usato dall'export backup).
   if (resource === 'data') {
-    if (method === 'GET') return json(res, 200, exportData({ includeXml: url.searchParams.get('full') === '1' }));
-    if (method === 'PUT') {
+    if (method === 'GET') {
+      // Boot: qualsiasi autenticato. Export completo (?full=1, con xml) = backup → dati.export.
+      const full = url.searchParams.get('full') === '1';
+      if (full && !need('dati.export')) return forbid();
+      return json(res, 200, exportData({ includeXml: full }));
+    }
+    if (method === 'PUT') { // sostituzione totale (import/wipe): alto privilegio
+      if (!need('dati.import')) return forbid();
       const b = await readBody(req);
       if (b == null) return json(res, 400, { error: 'JSON non valido' });
       const force = url.searchParams.get('force') === '1';
@@ -103,6 +163,12 @@ async function api(req, res, url) {
   if (resource === 'changes' && method === 'POST') {
     const b = await readBody(req);
     if (b == null) return json(res, 400, { error: 'JSON non valido' });
+    // Guardia di scrittura GROSSOLANA (Livello A): un changeset che tocca le collezioni
+    // richiede un permesso di gestione dati; uno solo di `settings` (tema/azienda attiva)
+    // è consentito a qualsiasi autenticato (preferenze di vista).
+    const toccaCollezioni = b.collections && typeof b.collections === 'object' &&
+      Object.values(b.collections).some((ch) => ch && ((ch.upsert && ch.upsert.length) || (ch.remove && ch.remove.length)));
+    if (toccaCollezioni && !canWriteData(user)) return forbid();
     try { return json(res, 200, { ok: true, ...applyChanges(b) }); }
     catch (e) {
       if (e && e.conflict) return json(res, 409, { error: 'conflict', rev: e.rev }); // revisione superata: il client ricarica o forza
@@ -111,6 +177,7 @@ async function api(req, res, url) {
   }
 
   if (resource === 'reset' && method === 'POST') {
+    if (!need('dati.import')) return forbid();
     return json(res, 200, { ok: true, ...resetData() });
   }
 
@@ -122,6 +189,7 @@ async function api(req, res, url) {
     }
     // Controlla ora (interroga il manifest su GitHub)
     if (method === 'POST' && id === 'check') {
+      if (!need('impostazioni.manage')) return forbid();
       if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
       try {
         const r = await updater.checkUpdate(UPDATE_URL, __dirname);
@@ -131,6 +199,7 @@ async function api(req, res, url) {
     }
     // Scarica e installa l'aggiornamento, poi esce con codice 42 (il supervisore riavvia sul codice nuovo).
     if (method === 'POST' && id === 'install') {
+      if (!need('impostazioni.manage')) return forbid();
       if (!UPDATE_URL) return json(res, 400, { error: 'Aggiornamenti disattivati (ZEN_UPDATE_URL vuota)' });
       try {
         const chk = await updater.checkUpdate(UPDATE_URL, __dirname);
@@ -149,13 +218,14 @@ async function api(req, res, url) {
   // Allegati (BLOB): upload / download / delete.
   if (resource === 'attachments') {
     if (method === 'POST' && !id) {
+      if (!canWriteData(user)) return forbid();
       const bin = await readRawBody(req);
       if (!bin.length) return json(res, 400, { error: 'File vuoto' });
       const name = decodeURIComponent(req.headers['x-filename'] || 'file');
       const type = req.headers['content-type'] || 'application/octet-stream';
       return json(res, 201, putAttachment(name, type, bin));
     }
-    if (method === 'GET' && id) {
+    if (method === 'GET' && id) { // lettura: qualsiasi autenticato
       const row = getAttachment(id);
       if (!row) { res.writeHead(404); return res.end('Not found'); }
       res.writeHead(200, {
@@ -164,7 +234,31 @@ async function api(req, res, url) {
       });
       return res.end(Buffer.from(row.bin));
     }
-    if (method === 'DELETE' && id) return json(res, 200, { ok: deleteAttachment(id) });
+    if (method === 'DELETE' && id) { if (!canWriteData(user)) return forbid(); return json(res, 200, { ok: deleteAttachment(id) }); }
+  }
+
+  // ---- UTENTI (gestione account e permessi) ----
+  if (resource === 'utenti') {
+    if (!need('utenti.manage')) return forbid();
+    if (method === 'GET' && !id) return json(res, 200, listPublic());
+    if (method === 'POST' && !id) {
+      const b = await readBody(req);
+      try { return json(res, 201, createUser(b || {})); }
+      catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
+    }
+    if (method === 'PUT' && id) {
+      const b = await readBody(req);
+      try {
+        const pub = updateUser(id, b || {});
+        destroySessionsOfUser(Number(id)); // permessi/ruolo cambiati → nuovo login
+        return json(res, 200, pub);
+      } catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
+    }
+    if (method === 'DELETE' && id) {
+      if (Number(id) === user.id) return json(res, 409, { error: 'Non puoi eliminare te stesso' });
+      try { const r = removeUser(id); destroySessionsOfUser(Number(id)); return json(res, 200, r); }
+      catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
+    }
   }
 
   return json(res, 404, { error: 'endpoint non trovato' });
@@ -204,7 +298,8 @@ async function serveStatic(req, res, url) {
   } catch { res.writeHead(404); res.end('Not found'); }
 }
 
-seedIfEmpty(); // primo avvio: DB vuoto → dati di default
+seedIfEmpty();       // primo avvio: DB vuoto → dati di default
+seedAdminIfEmpty();  // primo avvio (o DB pre-multiutenza): crea admin/admin se non ci sono utenti
 
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);

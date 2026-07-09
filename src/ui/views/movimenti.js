@@ -1,5 +1,6 @@
 // ============ Vista Movimenti (+ import estratto conto + riconciliazione) ============
 import { data, save } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, uid, todayStr, round2, MESI } from '../../domain/util.js';
 import { activeCompany, acc, cat, co, txLabel } from '../../domain/finance.js';
 import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
@@ -43,7 +44,7 @@ function inScope() {
 
 export function render() {
   let h = `<div class="pagehead"><h1>Movimenti</h1></div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px">
+  if (can('movimenti.manage')) h += `<div class="btnrow" style="margin-bottom:12px">
     <button class="btn primary" data-new>+ Nuovo</button>
     <button class="btn" data-importxls>⭳ Importa estratto conto</button>
     ${data.rules.length ? '<button class="btn" data-reapply>↻ Riapplica regole esistenti</button>' : ''}
@@ -155,7 +156,7 @@ function rowTx(t) {
   // badge testuale solo per i collegati ("riconciliato"); per i gestibili lo stato lo danno i pulsanti.
   const stBadge = (auto && st === 'managed' && txIsLinked(t)) ? ' <span class="badge b-paid">riconciliato</span>' : '';
   const tags = `${t.f24 ? ' <span class="badge b-partial">F24</span>' : ''}${t.imported ? ' <span class="badge b-unpaid">banca</span>' : ''}${stBadge}`;
-  const stateCtrl = auto ? '' : `<div class="statebtns" data-stbtns>${STATE_OPTS.map(o => `<button class="stbtn ${st === o.v ? 'on' : ''}" data-setstate="${t.id}:${o.v}" title="${esc(o.label)}">${o.icon}</button>`).join('')}</div>`;
+  const stateCtrl = (auto || !can('movimenti.manage')) ? '' : `<div class="statebtns" data-stbtns>${STATE_OPTS.map(o => `<button class="stbtn ${st === o.v ? 'on' : ''}" data-setstate="${t.id}:${o.v}" title="${esc(o.label)}">${o.icon}</button>`).join('')}</div>`;
   return `<div class="row click ${st}" data-mov="${t.id}">
     <div class="emoji">${icon}</div>
     <div class="mid"><div class="t1">${esc(txLabel(t))}${tags}</div><div class="t2">${sub}</div></div>
@@ -166,8 +167,8 @@ function rowTx(t) {
 
 export function bind(root) {
   const rerender = () => { root.innerHTML = render(); bind(root); };
-  root.querySelector('[data-new]').onclick = () => openMovimento(null);
-  root.querySelector('[data-importxls]').onclick = () => openBankImport();
+  root.querySelector('[data-new]')?.addEventListener('click', () => openMovimento(null));
+  root.querySelector('[data-importxls]')?.addEventListener('click', () => openBankImport());
   root.querySelector('[data-reapply]')?.addEventListener('click', () => { const n = reapplyAll(); toast(n ? `${n} movimenti aggiornati` : 'Nessun movimento da aggiornare'); });
   root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filterType = b.dataset.f; rerender(); });
   const accSel = root.querySelector('#mf_acc'); if (accSel) accSel.onchange = () => { fAcc = accSel.value; rerender(); };
@@ -378,6 +379,7 @@ function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
 // ---------- editor movimento ----------
 export function openMovimento(id) {
   const t = id ? data.transactions.find(x => x.id === id) : null;
+  const w = can('movimenti.manage');
   const type = t?.type || 'expense';
   const cid = t?.companyId || activeCompany() || data.companies[0]?.id;
   const html = `
@@ -393,15 +395,15 @@ export function openMovimento(id) {
     <div class="field"><label>Data</label><input id="m_date" type="date" value="${t?.date || todayStr()}"></div>
     ${t?.desc ? `<div class="field"><label>Descrizione banca (originale)</label><input value="${esc(t.desc)}" disabled style="opacity:.7"></div>` : ''}
     <div class="field"><label>Nome visualizzato</label><input id="m_note" value="${esc(t?.note || '')}" placeholder="${t?.desc ? 'es. nome leggibile per la lista' : 'facoltativo'}"></div>
-    ${t && (t.desc || t.note) ? '<div class="btnrow" style="margin-bottom:4px"><button class="btn sm" data-rule>⚙ Crea regola da questo movimento</button></div>' : ''}
-    <div class="field" style="margin-top:4px"><label><input type="checkbox" id="m_f24" ${t?.f24 ? 'checked' : ''}> F24 (versamento tributi)</label></div>
+    ${t && (t.desc || t.note) && w ? '<div class="btnrow" style="margin-bottom:4px"><button class="btn sm" data-rule>⚙ Crea regola da questo movimento</button></div>' : ''}
+    <div class="field" style="margin-top:4px"><label><input type="checkbox" id="m_f24" ${t?.f24 ? 'checked' : ''} ${w ? '' : 'disabled'}> F24 (versamento tributi)</label></div>
     <div class="field" id="m_f24wrap" style="${t?.f24 ? '' : 'display:none'}"><label>Periodo / riferimento F24</label><input id="m_f24ref" value="${esc(t?.f24ref || '')}" placeholder="es. 2026 · IVA 1° trimestre"></div>
     ${stateSelector(t)}
     ${t ? reconSection(t) : ''}
     <div class="actions">
-      ${id ? '<button class="btn danger" data-del>Elimina</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${id && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`;
   openSheet(html, sheet => {
     let curType = type;
@@ -419,7 +421,7 @@ export function openMovimento(id) {
       keyword: suggestKeyword(t.desc || t.note), categoryId: t.categoryId || null, supplierId: t.supplierId || null, displayName: (t.note || ''),
       appliesTo: t.type === 'income' ? 'income' : 'expense'
     }));
-    if (id) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il movimento?', isTxReconciled(t.id) ? 'È riconciliato a una o più fatture: verrà anche scollegato.' : 'Operazione irreversibile.', 'Elimina', () => {
+    if (id && w) sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il movimento?', isTxReconciled(t.id) ? 'È riconciliato a una o più fatture: verrà anche scollegato.' : 'Operazione irreversibile.', 'Elimina', () => {
       unlinkTx(t.id); // rimuove eventuali pagamenti collegati nelle fatture
       data.transactions = data.transactions.filter(x => x.id !== id); save(); closeSheet(); toast('Movimento eliminato');
     }, { danger: true });
@@ -440,7 +442,14 @@ export function openMovimento(id) {
         toast('Scollegato'); openMovimento(t.id);
       }, { danger: true });
     });
-    sheet.querySelector('[data-save]').onclick = () => saveMov(id, curType, sheet, t);
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => saveMov(id, curType, sheet, t));
+    // Sola lettura (senza movimenti.manage): mostra i dettagli ma neutralizza ogni
+    // controllo. I campi/combo diventano inerti (i combo dipendono dal loro input) e i
+    // chip tipo/stato si disabilitano; restano solo "Chiudi" e i link ai collegamenti.
+    if (!w) {
+      sheet.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+      sheet.querySelectorAll('#m_type .chip, #m_state .chip').forEach(b => { b.disabled = true; });
+    }
   });
 }
 // selettore di stato manuale nell'editor. Per i movimenti già collegati (riconciliati/rate/scadenze)
@@ -493,6 +502,7 @@ function saveMov(id, type, sheet, prev) {
 // oppure (se non riconciliato) il tasto Riconcilia, sempre disponibile anche se ignorato nella lista.
 function reconSection(t) {
   if (t.type === 'transfer') return '';
+  const w = can('movimenti.manage');
   const linkedInvs = txLinkedInvoices(t.id);
   const loan = t.loanId ? data.loans.find(l => l.id === t.loanId) : null;
   const inst = loan ? insts(loan).find(i => i.id === t.instId) : null;
@@ -506,10 +516,10 @@ function reconSection(t) {
   if (items.length) {
     return `<div class="section-title">Riconciliato con</div><div class="list">${items.map(it => `<div class="row">
       <div class="mid t1" data-goto="${it.k}:${it.id}" style="cursor:pointer;color:var(--accent)">${it.label}</div>
-      ${it.detach ? `<button class="btn sm" data-unlink="${it.k}:${it.id}">Scollega</button>` : '<span class="muted" style="font-size:12px">generato da qui</span>'}
+      ${it.detach && w ? `<button class="btn sm" data-unlink="${it.k}:${it.id}">Scollega</button>` : (it.detach ? '' : '<span class="muted" style="font-size:12px">generato da qui</span>')}
     </div>`).join('')}</div>`;
   }
-  if (t.type === 'expense') {
+  if (t.type === 'expense' && w) {
     return `<div class="btnrow" style="margin-top:6px"><button class="btn" data-recon>↔ Riconcilia con una fattura</button></div>`;
   }
   return '';

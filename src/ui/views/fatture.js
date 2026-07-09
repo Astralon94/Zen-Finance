@@ -1,5 +1,6 @@
 // ============ Vista Fatture passive ============
 import { data, save, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, uid, MESI } from '../../domain/util.js';
 import { activeCompany, co, sup, acc, txLabel } from '../../domain/finance.js';
 import {
@@ -61,9 +62,11 @@ function yearsAvailable() {
 
 function segmented() {
   const n = countToPay(activeCompany());
+  // Il tab "In pagamento" registra pagamenti (scrittura): visibile solo con fatture.manage.
+  const payTab = can('fatture.manage') ? `<button class="chip ${mode === 'pay' ? 'on' : ''}" data-mode="pay">★ In pagamento${n ? ' · ' + n : ''}</button>` : '';
   return `<div class="chips" style="margin-top:2px">
     <button class="chip ${mode === 'list' ? 'on' : ''}" data-mode="list">Elenco</button>
-    <button class="chip ${mode === 'pay' ? 'on' : ''}" data-mode="pay">★ In pagamento${n ? ' · ' + n : ''}</button>
+    ${payTab}
     <button class="chip ${mode === 'log' ? 'on' : ''}" data-mode="log">🕘 Storico</button>
   </div>`;
 }
@@ -112,6 +115,8 @@ function exportStoricoPdf(limit) {
 }
 
 export function render() {
+  const w = can('fatture.manage');
+  if (mode === 'pay' && !w) mode = 'list';   // il tab pagamenti richiede fatture.manage
   if (mode === 'pay') {
     return `<div class="pagehead"><h1>Fatture</h1></div>${segmented()}${payBody()}`;
   }
@@ -138,14 +143,16 @@ export function render() {
   let h = `<div class="pagehead"><h1>Fatture</h1><span class="sub">passive</span></div>`;
   h += segmented();
 
-  // import
-  h += `<div class="drop" id="drop">
+  // import (scrittura): solo con fatture.manage
+  if (w) {
+    h += `<div class="drop" id="drop">
       <div>Trascina qui i file oppure <b>scegli</b></div>
       <div class="muted" style="font-size:12.5px;margin-top:6px">.xml · .p7m firmati · archivi .zip — singoli o multipli</div>
       <input type="file" id="fileInput" accept=".xml,.p7m,.zip" multiple style="display:none">
       <input type="file" id="dirInput" webkitdirectory style="display:none">
     </div>`;
-  h += `<div class="btnrow" style="margin:12px 0"><button class="btn" data-impdir>📁 Importa cartella…</button><button class="btn primary" data-newinv>+ Fattura manuale</button></div>`;
+    h += `<div class="btnrow" style="margin:12px 0"><button class="btn" data-impdir>📁 Importa cartella…</button><button class="btn primary" data-newinv>+ Fattura manuale</button></div>`;
+  }
 
   // ---- filtri ----
   const years = yearsAvailable();
@@ -171,12 +178,12 @@ export function render() {
     <div class="tnum" style="font-weight:800">${fmt(aggRes)} <span class="muted" style="font-weight:500;font-size:12px">residuo</span></div>
   </div>`;
 
-  // seleziona tutte le fatture visibili (coi filtri attivi)
+  // seleziona tutte le fatture visibili (coi filtri attivi) — azioni di scrittura: solo con fatture.manage
   const allShownSel = shown.length > 0 && shown.every(i => sel.has(i.id));
-  if (shown.length) h += `<div class="btnrow" style="margin-bottom:10px"><button class="btn sm" data-selall>${allShownSel ? '☐ Deseleziona tutte' : '☑ Seleziona tutte (' + shown.length + ')'}</button></div>`;
+  if (w && shown.length) h += `<div class="btnrow" style="margin-bottom:10px"><button class="btn sm" data-selall>${allShownSel ? '☐ Deseleziona tutte' : '☑ Seleziona tutte (' + shown.length + ')'}</button></div>`;
 
   // barra azioni selezione
-  if (sel.size) {
+  if (w && sel.size) {
     const selInvs = [...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean);
     const selRes = round2(selInvs.reduce((s, i) => s + invSignedResiduo(i), 0));
     h += `<div class="card" style="position:sticky;top:64px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-color:var(--accent)">
@@ -216,8 +223,9 @@ function rowInv(i) {
   // NDC: importo a favore → segno + e colore verde; fatture → uscita
   const amtCls = cn ? 'pos' : (st === 'paid' ? '' : 'neg');
   const amtTxt = cn ? '+' + amt : amt;
+  const selBox = can('fatture.manage') ? `<input type="checkbox" class="selbox" data-sel="${i.id}" ${checked} style="width:18px;height:18px;flex-shrink:0">` : '';
   return `<div class="row ${sel.has(i.id) ? 'sel' : ''}">
-    <input type="checkbox" class="selbox" data-sel="${i.id}" ${checked} style="width:18px;height:18px;flex-shrink:0">
+    ${selBox}
     <div class="emoji" data-inv="${i.id}" style="cursor:pointer">${cn ? '↩️' : (i.source === 'xml' ? '📄' : '🧾')}</div>
     <div class="mid" data-inv="${i.id}" style="cursor:pointer"><div class="t1">${esc(supNameOf(i))} ${statusBadge(i)} ${flag}</div>
       <div class="t2">${i.number ? 'N. ' + esc(i.number) + ' · ' : ''}${i.date ? fmtDate(i.date) : ''}${i.due && !cn ? ' · scad. ' + fmtDate(i.due) : ''}</div></div>
@@ -237,7 +245,7 @@ export function bind(root) {
   root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; rerender(); });
   root.querySelector('[data-flagonly]').onclick = () => { flagOnly = !flagOnly; rerender(); };
   root.querySelectorAll('[data-inv]').forEach(el => el.onclick = () => openInvoice(el.dataset.inv));
-  root.querySelector('[data-newinv]').onclick = () => openInvoiceEditor(null);
+  root.querySelector('[data-newinv]')?.addEventListener('click', () => openInvoiceEditor(null));
 
   root.querySelector('#f_sup').onchange = e => { supFilter = e.target.value; rerender(); };
   root.querySelector('#f_year').onchange = e => { yearFilter = +e.target.value; rerender(); };
@@ -258,21 +266,23 @@ export function bind(root) {
   root.querySelector('[data-unflagsel]')?.addEventListener('click', () => { flagMany([...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean), false); toast('Flag rimosso'); sel.clear(); rerender(); });
   root.querySelector('[data-clearsel]')?.addEventListener('click', () => { sel.clear(); rerender(); });
 
-  // import
+  // import (solo con fatture.manage: gli elementi esistono solo se l'utente può scrivere)
   const drop = root.querySelector('#drop');
-  const input = root.querySelector('#fileInput');
-  drop.onclick = () => input.click();
-  input.onchange = () => { routeImport([...input.files]); input.value = ''; };
-  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  // supporta anche il trascinamento di intere CARTELLE (ricorsivo, con i PDF allegati dentro)
-  drop.addEventListener('drop', async e => { const all = await filesFromDataTransfer(e.dataTransfer); routeImport(all); });
+  if (drop) {
+    const input = root.querySelector('#fileInput');
+    drop.onclick = () => input.click();
+    input.onchange = () => { routeImport([...input.files]); input.value = ''; };
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    // supporta anche il trascinamento di intere CARTELLE (ricorsivo, con i PDF allegati dentro)
+    drop.addEventListener('drop', async e => { const all = await filesFromDataTransfer(e.dataTransfer); routeImport(all); });
 
-  // Importa un'intera cartella (es. lo scarico InfoCamere, con sottocartelle per fattura):
-  // gli .xml/.p7m/.zip diventano fatture; i PDF nella stessa cartella-fattura ne diventano allegati.
-  const dirInput = root.querySelector('#dirInput');
-  root.querySelector('[data-impdir]').onclick = () => dirInput.click();
-  dirInput.onchange = () => { routeImport([...dirInput.files]); dirInput.value = ''; };
+    // Importa un'intera cartella (es. lo scarico InfoCamere, con sottocartelle per fattura):
+    // gli .xml/.p7m/.zip diventano fatture; i PDF nella stessa cartella-fattura ne diventano allegati.
+    const dirInput = root.querySelector('#dirInput');
+    root.querySelector('[data-impdir]')?.addEventListener('click', () => dirInput.click());
+    dirInput.onchange = () => { routeImport([...dirInput.files]); dirInput.value = ''; };
+  }
 }
 
 // ---- import flow ----
@@ -363,13 +373,14 @@ function openImportResult(errors) {
 // ---- allegati (PDF) della fattura ----
 const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
 function attBlock(i) {
+  const w = can('fatture.manage');
   const atts = i.attachments || [];
   let h = atts.length ? `<div class="list">${atts.map(a => `<div class="row">
       <div class="emoji">📎</div>
       <div class="mid" data-att-open="${a.id}" style="cursor:pointer"><div class="t1">${esc(a.name)}</div><div class="t2">${fmtSize(a.size)}${a.addedAt ? ' · ' + new Date(a.addedAt).toLocaleDateString('it-IT') : ''}</div></div>
-      <button class="btn sm danger" data-att-del="${a.id}">Elimina</button>
+      ${w ? `<button class="btn sm danger" data-att-del="${a.id}">Elimina</button>` : ''}
     </div>`).join('')}</div>` : `<div class="card empty" style="padding:14px">Nessun allegato.</div>`;
-  h += `<div class="btnrow" style="margin-top:10px"><button class="btn sm" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" accept="application/pdf,.pdf" style="display:none"></div>`;
+  if (w) h += `<div class="btnrow" style="margin-top:10px"><button class="btn sm" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" accept="application/pdf,.pdf" style="display:none"></div>`;
   return h;
 }
 function bindAttachments(sheet, i, id) {
@@ -408,13 +419,14 @@ function bindAttachments(sheet, i, id) {
 export function openInvoice(id) {
   const i = data.invoices.find(x => x.id === id);
   if (!i) return;
+  const w = can('fatture.manage');
   const res = invResiduo(i), pay = invPayable(i), wh = invWithholding(i);
   const payments = invPayments(i);
   const line = (l, v, cls = '') => `<div class="row"><div class="mid t2">${l}</div><div class="amt tnum ${cls}">${v}</div></div>`;
   const paysHtml = payments.length ? payments.map(p => `<div class="row">
       <div class="emoji">💸</div>
       <div class="mid"><div class="t1 tnum">${fmt(p.amount)}</div><div class="t2">${fmtDate(p.date)}${p.accountId ? ' · ' + esc((data.accounts.find(a => a.id === p.accountId)?.name) || '') : ' · senza conto'}</div></div>
-      <button class="btn sm danger" data-delpay="${p.id}">Rimuovi</button>
+      ${w ? `<button class="btn sm danger" data-delpay="${p.id}">Rimuovi</button>` : ''}
     </div>`).join('') : '<div class="muted" style="padding:8px 2px">Nessun pagamento registrato.</div>';
 
   openSheet(`
@@ -432,17 +444,17 @@ export function openInvoice(id) {
     <div class="section-title" style="margin-top:14px">Allegati</div>
     ${attBlock(i)}
     <div class="btnrow" style="margin-top:12px">
-      ${res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
-      ${res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
+      ${w && res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
+      ${w && res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
       ${i.source === 'xml' ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
-      <button class="btn" data-edit>Modifica</button>
+      ${w ? '<button class="btn" data-edit>Modifica</button>' : ''}
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:8px">Per eliminare una fattura: Impostazioni → "Elimina una fattura". (Qui puoi rimuovere i singoli pagamenti senza toccare la fattura.)</div>`, sheet => {
+    ${w ? '<div class="muted" style="font-size:11.5px;margin-top:8px">Per eliminare una fattura: Impostazioni → "Elimina una fattura". (Qui puoi rimuovere i singoli pagamenti senza toccare la fattura.)</div>' : ''}`, sheet => {
     sheet.querySelectorAll('[data-delpay]').forEach(b => b.onclick = () => { removePayment(i, b.dataset.delpay); toast('Pagamento rimosso'); openInvoice(id); });
     sheet.querySelector('[data-flag]')?.addEventListener('click', () => { toggleToPay(i); openInvoice(id); });
     sheet.querySelector('[data-settle]')?.addEventListener('click', () => openSettleInvoice(i));
     sheet.querySelector('[data-xml]')?.addEventListener('click', () => openXmlViewer(i.id, i.xml));
-    sheet.querySelector('[data-edit]').onclick = () => openInvoiceEditor(id);
+    sheet.querySelector('[data-edit]')?.addEventListener('click', () => openInvoiceEditor(id));
     bindAttachments(sheet, i, id);
   });
 }

@@ -1,6 +1,6 @@
 {
   "name": "zen-finance-server",
-  "version": "2.9.6",
+  "version": "2.10.0",
   "private": true,
   "type": "module",
   "description": "Zen-Finance (server) — Node http + node:sqlite, zero dipendenze. Sperimentazione migrazione da FSA a DB relazionale.",
@@ -9,6 +9,7 @@
     "build": "vite build && cp dist/index.html public/index.html",
     "dev": "vite",
     "reset-db": "node scripts/reset.mjs",
+    "reset-admin": "node scripts/reset-admin.mjs",
     "test:roundtrip": "node scripts/roundtrip.mjs"
   },
   "dependencies": {

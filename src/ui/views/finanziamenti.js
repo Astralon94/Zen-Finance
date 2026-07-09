@@ -1,5 +1,6 @@
 // ============ Vista Rateizzazioni (mutui, prestiti, leasing, dilazioni) ============
 import { data, save, attachmentsReady, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, uid } from '../../domain/util.js';
 import { activeCompany, acc, co, txLabel } from '../../domain/finance.js';
 import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
@@ -30,7 +31,7 @@ function list() {
   const loans = loansInScope(activeCompany());
   const totRes = round2(loans.reduce((s, l) => s + loanResiduo(l), 0));
   let h = `<div class="pagehead"><h1>Rateizzazioni</h1><span class="sub">${loans.length ? 'debito residuo ' + fmt(totRes) : ''}</span></div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuova rateizzazione</button>${loans.length ? '<button class="btn" data-export-list>⤓ Esporta PDF</button>' : ''}</div>`;
+  h += `<div class="btnrow" style="margin-bottom:12px">${can('finanziamenti.manage') ? '<button class="btn primary" data-new>+ Nuova rateizzazione</button>' : ''}${loans.length ? '<button class="btn" data-export-list>⤓ Esporta PDF</button>' : ''}</div>`;
   if (!loans.length) return h + `<div class="card empty">Nessuna rateizzazione.<br><span class="muted">Aggiungi mutui, prestiti, leasing o debiti con il loro piano rate.</span></div>`;
   loans.forEach(l => {
     const tot = insts(l).length, pc = paidCount(l), pct = tot ? Math.round(pc / tot * 100) : 0;
@@ -77,26 +78,28 @@ function detail(l) {
   else h += `<div class="list">${list.map(i => instRow(l, i)).join('')}</div>`;
   h += `<div class="section-title">Allegati</div>`;
   h += attachmentsBlock(l);
-  h += `<div class="btnrow" style="margin-top:12px"><button class="btn" data-edit>Modifica</button><button class="btn" data-export-loan>⤓ PDF</button><button class="btn danger" data-del>Elimina</button></div>`;
+  const w = can('finanziamenti.manage');
+  h += `<div class="btnrow" style="margin-top:12px">${w ? '<button class="btn" data-edit>Modifica</button>' : ''}<button class="btn" data-export-loan>⤓ PDF</button>${w ? '<button class="btn danger" data-del>Elimina</button>' : ''}</div>`;
   return h;
 }
 
 const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
 function attachmentsBlock(l) {
+  const w = can('finanziamenti.manage');
   const atts = l.attachments || [];
   let h = '';
   if (atts.length) {
     h += `<div class="list">${atts.map(a => `<div class="row">
       <div class="emoji">📎</div>
       <div class="mid" data-att-open="${a.id}" style="cursor:pointer"><div class="t1">${esc(a.name)}</div><div class="t2">${fmtSize(a.size)}${a.addedAt ? ' · ' + new Date(a.addedAt).toLocaleDateString('it-IT') : ''}</div></div>
-      <button class="btn sm danger" data-att-del="${a.id}">Elimina</button>
+      ${w ? `<button class="btn sm danger" data-att-del="${a.id}">Elimina</button>` : ''}
     </div>`).join('')}</div>`;
   } else if (attachmentsReady()) {
     h += `<div class="card empty" style="padding:18px">Nessun allegato.</div>`;
   }
-  if (attachmentsReady()) {
+  if (attachmentsReady() && w) {
     h += `<div class="btnrow" style="margin-top:10px"><button class="btn" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" style="display:none"></div>`;
-  } else {
+  } else if (!attachmentsReady()) {
     h += `<div class="card empty" style="padding:18px">Allegati non ancora disponibili in questa versione server (in arrivo).</div>`;
   }
   return h;
@@ -154,7 +157,7 @@ function instRow(l, i) {
     <div class="mid"><div class="t1">Rata ${i.n}${od ? ' <span class="badge b-overdue">scaduta</span>' : ''}</div>
       <div class="t2">${i.date ? fmtDate(i.date) : ''}${paid && i.paidDate ? ' · pagata ' + fmtDate(i.paidDate) : ''}${variance ? ' · piano ' + fmt(i.amount) : ''}</div></div>
     <div class="amt tnum ${paid ? '' : 'neg'}">${fmt(eff)}</div>
-    ${paid ? `<button class="btn sm" data-unpay="${i.id}">↩</button>` : `<button class="btn sm primary" data-pay="${i.id}">✓</button>`}
+    ${can('finanziamenti.manage') ? (paid ? `<button class="btn sm" data-unpay="${i.id}">↩</button>` : `<button class="btn sm primary" data-pay="${i.id}">✓</button>`) : ''}
   </div>`;
 }
 
@@ -300,6 +303,7 @@ function openLoanEditor(id) {
 // ---------- pagamento rata ----------
 export function openInstPay(l, i) {
   if (!i) return;
+  const w = can('finanziamenti.manage');
   const cands = candidates(l, i);
   const candHtml = cands.map(t => `<div class="row click" data-pick="${t.id}">
       <div class="emoji">⬇️</div>
@@ -309,9 +313,8 @@ export function openInstPay(l, i) {
   // quante rate precedenti (cronologiche) sono ancora da pagare
   const ordered = insts(l).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.n - b.n));
   const prevPending = ordered.slice(0, Math.max(0, ordered.findIndex(x => x.id === i.id))).filter(x => x.status !== 'paid').length;
-  openSheet(`
-    <h2>Paga rata ${i.n}</h2>
-    <div class="sheetsub">${esc(l.name)} · piano ${fmt(i.amount)}${l.variableRate ? ' <span class="badge b-unpaid">tasso var.</span>' : ''} · ${i.date ? fmtDateFull(i.date) : ''}</div>
+  const paidNote = i.status === 'paid' ? ` · <span class="badge b-paid">pagata${i.paidDate ? ' ' + fmtDate(i.paidDate) : ''}</span>` : '';
+  const body = w ? `
     ${prevPending ? `<div class="field"><label><input type="checkbox" id="ip_prev"> Segna pagate anche le ${prevPending} rate precedenti (storico, senza movimento)</label></div>` : ''}
     ${cands.length ? `<div class="section-title">Abbina a un movimento già presente</div>${l.variableRate ? '<div class="muted" style="font-size:12px;margin:0 2px 6px">La rata erediterà l\'importo del movimento selezionato.</div>' : ''}<div class="list">${candHtml}</div>` : ''}
     <div class="section-title">Oppure registra ora</div>
@@ -324,15 +327,19 @@ export function openInstPay(l, i) {
       <button class="btn" data-cancel>Annulla</button>
       <button class="btn" data-mark>Solo pagata</button>
       <button class="btn primary" data-create>Crea movimento</button>
-    </div>`, sheet => {
+    </div>` : `<div class="actions"><button class="btn primary" data-cancel>Chiudi</button></div>`;
+  openSheet(`
+    <h2>Rata ${i.n}</h2>
+    <div class="sheetsub">${esc(l.name)} · piano ${fmt(i.amount)}${l.variableRate ? ' <span class="badge b-unpaid">tasso var.</span>' : ''} · ${i.date ? fmtDateFull(i.date) : ''}${paidNote}</div>
+    ${body}`, sheet => {
     const doPrev = () => { if (sheet.querySelector('#ip_prev')?.checked) markPreviousPaid(l, i); };
     sheet.querySelectorAll('[data-pick]').forEach(el => el.onclick = () => { payInstWithTx(l, i, data.transactions.find(t => t.id === el.dataset.pick)); doPrev(); closeSheet(); toast('Abbinata e pagata ✓'); });
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-mark]').onclick = () => { payInstMarkOnly(i); doPrev(); closeSheet(); toast('Rata segnata pagata ✓'); };
-    sheet.querySelector('[data-create]').onclick = () => {
+    sheet.querySelector('[data-mark]')?.addEventListener('click', () => { payInstMarkOnly(i); doPrev(); closeSheet(); toast('Rata segnata pagata ✓'); });
+    sheet.querySelector('[data-create]')?.addEventListener('click', () => {
       const amount = l.variableRate ? (parseAmount(sheet.querySelector('#ip_amt').value) ?? undefined) : undefined;
       payInstWithMovement(l, i, { date: sheet.querySelector('#ip_date').value || todayStr(), accountId: sheet.querySelector('#ip_acc').value || null, amount });
       doPrev(); closeSheet(); toast('Movimento creato, rata pagata ✓');
-    };
+    });
   });
 }

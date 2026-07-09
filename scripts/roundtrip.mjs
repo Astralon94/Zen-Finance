@@ -26,6 +26,7 @@ const sample = {
     id: 'i1', companyId: 'co1', supplierId: 's1', supplierName: 'Fornitore', number: '12', date: '2026-01-01',
     due: '2026-02-01', net: 100, vat: 22, total: 122, withholding: 0, categoryId: 'c-for', source: 'xml',
     xml: '<FatturaElettronica/>', note: '', toPay: true, creditNote: false, createdAt: 111,
+    attachments: [], // migrate() normalizza SEMPRE le fatture con attachments[] (come i loans)
     payments: [{ id: 'p1', amount: 50, date: '2026-01-15', accountId: 'acc1', txId: 't1', note: 'acconto' }],
   }],
   scheduled: [{

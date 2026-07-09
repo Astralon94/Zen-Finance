@@ -6,6 +6,7 @@
 // Il frontend continua a mutare `data` e chiamare save(); il diff lo calcola questo modulo.
 
 import { DEFAULT_DATA, migrate, DATA_VERSION } from './model.js';
+import { authFetch } from './auth.js';
 
 export let data = DEFAULT_DATA();
 
@@ -67,7 +68,7 @@ function diff(prev, d) {
 // ---- Boot: carica lo stato dal server ----
 export async function boot() {
   try {
-    const res = await fetch('/api/data');
+    const res = await authFetch('/api/data');
     data = res.ok ? migrate(await res.json()) : DEFAULT_DATA();
   } catch (e) { console.error('Boot: server non raggiungibile', e); data = DEFAULT_DATA(); }
   snapshot = snapOf(data);
@@ -98,7 +99,7 @@ async function flushChanges() {
   const sent = snapOf(data); // fotografia esatta di ciò su cui si basa il changeset
   inflight = true; dirty = false; notifyStatus();
   try {
-    const res = await fetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs) });
+    const res = await authFetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs) });
     if (res.ok) { const j = await res.json(); if (j && j.rev) data.rev = j.rev; snapshot = sent; lastSavedAt = Date.now(); errored = false; }
     else if (res.status === 409) { // un'altra scheda ha scritto: NON sovrascrivere, chiedi all'utente
       const j = await res.json().catch(() => ({}));
@@ -117,7 +118,7 @@ async function flushChanges() {
 // Ricarica lo stato dal server SCARTANDO le modifiche locali non salvate (scelta "Ricarica" nel conflitto).
 export async function reloadFromServer() {
   try {
-    const res = await fetch('/api/data');
+    const res = await authFetch('/api/data');
     if (!res.ok) return false;
     data = migrate(await res.json());
     snapshot = snapOf(data);
@@ -139,7 +140,7 @@ export function forceSave() {
 async function putWhole({ force = false } = {}) {
   inflight = true; notifyStatus();
   try {
-    const res = await fetch('/api/data' + (force ? '?force=1' : ''), {
+    const res = await authFetch('/api/data' + (force ? '?force=1' : ''), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
     });
     if (res.ok) { const j = await res.json(); if (j && j.rev) data.rev = j.rev; lastSavedAt = Date.now(); dirty = false; errored = false; }
@@ -162,7 +163,7 @@ export function flush() {
   if (!cs) return;
   cs.baseRev = data.rev ?? null; // se un'altra scheda ha già scritto, il server rifiuta (protegge i dati)
   try {
-    fetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs), keepalive: true });
+    authFetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs), keepalive: true });
   } catch (e) {}
 }
 
@@ -171,7 +172,7 @@ export function flush() {
 // che in memoria (leggera) non abbiamo. Fallback all'in-memory se il server non risponde.
 export async function exportJSON() {
   let payload;
-  try { const res = await fetch('/api/data?full=1'); payload = res.ok ? await res.text() : null; } catch (e) { payload = null; }
+  try { const res = await authFetch('/api/data?full=1'); payload = res.ok ? await res.text() : null; } catch (e) { payload = null; }
   if (payload == null) payload = JSON.stringify(data);
   const blob = new Blob([payload], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -192,7 +193,7 @@ export function importJSON(file) {
         snapshot = snapOf(data);
         await putWhole({ force: true });        // invia al server anche gli xml presenti nel file
         // rirendi lo stato in memoria "leggero" (senza xml), coerente col boot
-        try { const res = await fetch('/api/data'); if (res.ok) { data = migrate(await res.json()); snapshot = snapOf(data); } } catch (e) {}
+        try { const res = await authFetch('/api/data'); if (res.ok) { data = migrate(await res.json()); snapshot = snapOf(data); } } catch (e) {}
         emit();
         resolve(data);
       } catch (e) { reject(e); }
@@ -205,7 +206,7 @@ export function importJSON(file) {
 // XML di una fattura, on-demand (lazy-load). Ritorna la stringa XML o null.
 export async function getInvoiceXml(id) {
   if (!id) return null;
-  try { const res = await fetch('/api/invoices/' + id + '/xml'); return res.ok ? await res.text() : null; }
+  try { const res = await authFetch('/api/invoices/' + id + '/xml'); return res.ok ? await res.text() : null; }
   catch (e) { return null; }
 }
 
@@ -224,7 +225,7 @@ export async function restorePoint() { return { ok: false }; }
 export const attachmentsReady = () => true;
 export async function addAttachment(file) {
   try {
-    const res = await fetch('/api/attachments', {
+    const res = await authFetch('/api/attachments', {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'file') },
       body: file,
@@ -235,12 +236,12 @@ export async function addAttachment(file) {
 }
 export async function readAttachment(meta) {
   if (!meta?.id) return null;
-  try { const res = await fetch('/api/attachments/' + meta.id); return res.ok ? await res.blob() : null; }
+  try { const res = await authFetch('/api/attachments/' + meta.id); return res.ok ? await res.blob() : null; }
   catch (e) { return null; }
 }
 export async function deleteAttachment(meta) {
   if (!meta?.id) return false;
-  try { return (await fetch('/api/attachments/' + meta.id, { method: 'DELETE' })).ok; }
+  try { return (await authFetch('/api/attachments/' + meta.id, { method: 'DELETE' })).ok; }
   catch (e) { return false; }
 }
 export function deleteXmlFile() { /* l'XML ora vive nel DB (doc fattura): nessun file separato */ }

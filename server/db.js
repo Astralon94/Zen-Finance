@@ -24,6 +24,20 @@ function ddl() {
     -- Binari degli allegati: tabella STANDALONE, non gestita dalle COLLECTIONS.
     -- I salvataggi/changeset/import NON la toccano → i BLOB non vengono mai sovrascritti.
     CREATE TABLE IF NOT EXISTS attachments_bin (id TEXT PRIMARY KEY, name TEXT, type TEXT, size INTEGER, addedAt INTEGER, bin BLOB);
+    -- Utenti/permessi (multiutenza): tabella STANDALONE come attachments_bin.
+    -- Fuori da COLLECTIONS → import/export/reset/changes NON la toccano mai (le password
+    -- non finiscono nei backup JSON e un import non azzera gli account). Additiva: i DB
+    -- esistenti ricevono la tabella al primo avvio, dati intatti.
+    CREATE TABLE IF NOT EXISTS utenti (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      username      TEXT    UNIQUE NOT NULL,
+      nome          TEXT,
+      password_hash TEXT    NOT NULL,
+      ruolo         TEXT    NOT NULL DEFAULT 'standard',  -- admin | standard
+      permessi      TEXT    NOT NULL DEFAULT '[]',        -- JSON array di chiavi permesso
+      attivo        INTEGER NOT NULL DEFAULT 1,
+      creato_il     TEXT    NOT NULL
+    );
   `;
   for (const c of COLLECTIONS) {
     const cols = c.cols.map((x) => `${x.n} ${x.type}`).join(', ');

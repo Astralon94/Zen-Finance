@@ -55,6 +55,10 @@ button { cursor: pointer; border: none; background: none; }
 .navmenu button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 .navmenu .ic { width: 18px; text-align: center; }
 .navbadge { margin-left: auto; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px; }
+.usermenu .navmenu { left: auto; right: 0; }
+/* Controlli in sola lettura (editor aperto senza permesso di scrittura) */
+.chip:disabled, .chip[disabled] { opacity: .45; pointer-events: none; cursor: default; }
+input:disabled, select:disabled, textarea:disabled { opacity: .7; cursor: default; }
 
 /* ---- layout ---- */
 #view { max-width: 920px; margin: 0 auto; padding: 28px 20px 100px; }
