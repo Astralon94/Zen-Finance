@@ -1,5 +1,5 @@
 // ============ Vista Fatture passive ============
-import { data, save, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
+import { data, save, addAttachment, readAttachment, deleteAttachment, getInvoiceXml } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, uid, MESI } from '../../domain/util.js';
 import { activeCompany, co, sup, acc, txLabel } from '../../domain/finance.js';
@@ -19,6 +19,7 @@ import { openXmlViewer } from './xmlview.js';
 import { renderBody as payBody, bindBody as payBind, countToPay } from './pagamenti.js';
 import { mountPicker } from '../matchpicker.js';
 import { go } from '../app.js';
+import { buildZip } from '../../domain/zip.js';
 
 let mode = 'list';         // 'list' | 'pay' | 'log'
 let filter = 'all';        // stato
@@ -182,6 +183,16 @@ export function render() {
     <div class="tnum" style="font-weight:800">${fmt(aggRes)} <span class="muted" style="font-weight:500;font-size:12px">residuo</span></div>
   </div>`;
 
+  // esporta XML (fatture.esporta): selezione attiva se presente, altrimenti le fatture filtrate.
+  if (can('fatture.esporta')) {
+    const expBase = sel.size ? [...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean) : shown;
+    const nXml = expBase.filter(hasXml).length;
+    h += `<div class="btnrow" style="margin-bottom:10px;align-items:center;gap:8px">
+      <button class="btn sm" data-expxml ${nXml ? '' : 'disabled'}>⤓ Esporta XML${nXml ? ' (' + nXml + ')' : ''}</button>
+      <span class="muted" style="font-size:12px">${sel.size ? sel.size + ' selezionate' : shown.length + ' fatture filtrate'}${nXml ? '' : ' · nessun XML'}</span>
+    </div>`;
+  }
+
   // seleziona tutte le fatture visibili (coi filtri attivi) — azioni di pagamento: solo con fatture.pagamenti
   const allShownSel = shown.length > 0 && shown.every(i => sel.has(i.id));
   if (wPay && shown.length) h += `<div class="btnrow" style="margin-bottom:10px"><button class="btn sm" data-selall>${allShownSel ? '☐ Deseleziona tutte' : '☑ Seleziona tutte (' + shown.length + ')'}</button></div>`;
@@ -266,6 +277,10 @@ export function bind(root) {
     rerender();
   });
   root.querySelectorAll('[data-sel]').forEach(cb => cb.onchange = () => { cb.checked ? sel.add(cb.dataset.sel) : sel.delete(cb.dataset.sel); rerender(); });
+  root.querySelector('[data-expxml]')?.addEventListener('click', ev => {
+    const base = sel.size ? [...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean) : preStatus().filter(passStatus);
+    exportXmlZip(base, ev.currentTarget);
+  });
   root.querySelector('[data-flagsel]')?.addEventListener('click', () => { flagMany([...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean), true); toast(`${sel.size} aggiunte a "In pagamento"`); sel.clear(); rerender(); });
   root.querySelector('[data-unflagsel]')?.addEventListener('click', () => { flagMany([...sel].map(id => data.invoices.find(x => x.id === id)).filter(Boolean), false); toast('Flag rimosso'); sel.clear(); rerender(); });
   root.querySelector('[data-clearsel]')?.addEventListener('click', () => { sel.clear(); rerender(); });
@@ -419,6 +434,56 @@ function bindAttachments(sheet, i, id) {
   });
 }
 
+// ---- export XML (singolo file / ZIP) ----
+// Solo le fatture elettroniche importate hanno l'XML nel DB (source 'xml').
+function hasXml(i) { return i && i.source === 'xml'; }
+// Nome file leggibile e sicuro: <fornitore>_<numero>_<data>.xml (niente caratteri illegali).
+function sanitizeName(s) {
+  return String(s || '').replace(/[\/\\:*?"<>|]+/g, '-')
+    .replace(/[\u0000-\u001f]+/g, '-')  // scritti come escape: MAI byte di controllo crudi nel sorgente (rompono l'HTML inline)
+    .replace(/\s+/g, ' ').trim().replace(/^[.\s]+|[.\s]+$/g, '');
+}
+function xmlFileName(i) {
+  const parts = [supNameOf(i), i.number, i.date].map(sanitizeName).filter(Boolean);
+  return (parts.join('_') || 'fattura') + '.xml';
+}
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function downloadInvoiceXml(i) {
+  const xml = await getInvoiceXml(i.id);
+  if (!xml) { toast('XML non disponibile per questa fattura'); return; }
+  triggerDownload(new Blob([xml], { type: 'application/xml' }), xmlFileName(i));
+}
+// Export multiplo: recupera gli XML in sequenza, salta chi non ne ha, produce uno ZIP unico.
+// NB: NIENTE fflate qui — il suo codice (magic number binari) inietta un byte NUL nel
+// bundle single-file inline e la pagina muore a page-load. Si usa il mini-writer locale.
+async function exportXmlZip(list, btn) {
+  const withXml = list.filter(hasXml);
+  if (!withXml.length) { toast('Nessuna fattura con XML da esportare'); return; }
+  const enc = new TextEncoder();
+  const prevTxt = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Esportazione…'; }
+  const files = {}, used = new Set();
+  let ok = 0;
+  for (const i of withXml) {
+    const xml = await getInvoiceXml(i.id);
+    if (!xml) continue;
+    let name = xmlFileName(i), n = 1;
+    while (used.has(name)) name = xmlFileName(i).replace(/\.xml$/, '') + '_' + (++n) + '.xml';
+    used.add(name); files[name] = enc.encode(xml); ok++;
+  }
+  if (btn) { btn.disabled = false; if (prevTxt != null) btn.textContent = prevTxt; }
+  if (!ok) { toast('Nessun XML recuperato'); return; }
+  triggerDownload(buildZip(files), `fatture-xml-${todayStr()}.zip`);
+  const missing = list.length - ok;
+  toast(`Esportate ${ok} fattur${ok === 1 ? 'a' : 'e'}${missing ? ` (${missing} senza XML escluse)` : ''}`);
+}
+
 // ---- dettaglio fattura ----
 export function openInvoice(id) {
   const i = data.invoices.find(x => x.id === id);
@@ -452,7 +517,8 @@ export function openInvoice(id) {
     <div class="btnrow" style="margin-top:12px">
       ${w && res > 0.005 ? `<button class="btn ${isToPay(i) ? '' : 'primary'}" data-flag>${isToPay(i) ? '★ Togli da In pagamento' : '★ Metti In pagamento'}</button>` : ''}
       ${w && res > 0.005 ? '<button class="btn" data-settle>Salda fattura</button>' : ''}
-      ${i.source === 'xml' ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
+      ${hasXml(i) ? '<button class="btn" data-xml>Vedi XML</button>' : ''}
+      ${hasXml(i) && can('fatture.esporta') ? '<button class="btn" data-dlxml>⤓ Scarica XML</button>' : ''}
       ${wMod ? '<button class="btn" data-edit>Modifica</button>' : ''}
     </div>
     ${w ? '<div class="muted" style="font-size:11.5px;margin-top:8px">Per eliminare una fattura: Impostazioni → "Elimina una fattura". (Qui puoi rimuovere i singoli pagamenti senza toccare la fattura.)</div>' : ''}`, sheet => {
@@ -460,6 +526,7 @@ export function openInvoice(id) {
     sheet.querySelector('[data-flag]')?.addEventListener('click', () => { toggleToPay(i); openInvoice(id); });
     sheet.querySelector('[data-settle]')?.addEventListener('click', () => openSettleInvoice(i));
     sheet.querySelector('[data-xml]')?.addEventListener('click', () => openXmlViewer(i.id, i.xml));
+    sheet.querySelector('[data-dlxml]')?.addEventListener('click', ev => downloadInvoiceXml(i));
     sheet.querySelector('[data-edit]')?.addEventListener('click', () => openInvoiceEditor(id));
     bindAttachments(sheet, i, id);
   });

@@ -40,3 +40,4 @@ async function startApp() {
   // Nessuna sessione valida → mostra il login; a successo avvia l'app.
   showLogin(() => startApp());
 })();
+

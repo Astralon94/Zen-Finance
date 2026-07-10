@@ -49,6 +49,7 @@ export const PERMISSIONS = [
   { key: 'fatture.modifica',     group: 'Fatture',        label: 'Modificare le fatture e gli allegati', write: true },
   { key: 'fatture.elimina',      group: 'Fatture',        label: 'Eliminare le fatture', write: true },
   { key: 'fatture.pagamenti',    group: 'Fatture',        label: 'Registrare pagamenti e saldi delle fatture', write: true },
+  { key: 'fatture.esporta',      group: 'Fatture',        label: 'Esportare le fatture in XML' },
 
   // ---- Scadenze (F24 + Programmati) ----
   { key: 'f24.view',             group: 'Scadenze',       label: 'Consultare gli F24' },

@@ -11,7 +11,7 @@ import { putAttachment, getAttachment, deleteAttachment } from './server/attachm
 import { backupDb } from './server/db.js';
 import * as updater from './server/updater.js';
 import { createSession, getSession, destroySession, destroySessionsOfUser, verifyPassword } from './server/auth.js';
-import { PERMISSIONS, NAV, RUOLI, hasPermission, canWriteData, assegnabili } from './server/permissions.js';
+import { PERMISSIONS, NAV, RUOLI, hasPermission, hasAny, canWriteData, assegnabili } from './server/permissions.js';
 import {
   seedAdminIfEmpty, verifyLogin, utentePubblico, getByIdAttivo, setPassword,
   listPublic, create as createUser, update as updateUser, remove as removeUser,
@@ -132,8 +132,10 @@ async function api(req, res, url) {
     return json(res, 200, { permessi: PERMISSIONS, assegnabili: assegnabili(), nav: NAV, ruoli: RUOLI });
   }
 
-  // XML fattura on-demand (lazy-load): NON viaggia nel boot.
+  // XML fattura on-demand (lazy-load): NON viaggia nel boot. Consultazione o export
+  // (chi vede le fatture può già vederne l'XML in-app; l'export scarica lo stesso dato).
   if (resource === 'invoices' && id && parts[3] === 'xml' && method === 'GET') {
+    if (!hasAny(user, ['fatture.view', 'fatture.esporta'])) return forbid();
     const xml = getInvoiceXml(id);
     if (xml == null) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
