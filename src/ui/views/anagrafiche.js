@@ -9,6 +9,7 @@ import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
 import { companyOptions, accountOptions, categoryOptions, supplierOptions } from '../forms.js';
 import { reapplyAll } from '../../domain/rules.js';
 import { openRuleEditor } from '../ruleeditor.js';
+import { go } from '../app.js';
 
 // tipi di conto disponibili
 const ACCOUNT_KINDS = [
@@ -42,6 +43,9 @@ export function render() {
   else h += rules();
   return h;
 }
+
+// Apre la scheda di un fornitore dalla ricerca globale: porta alla tab Fornitori e apre l'editor.
+export function openSupplier(id) { tab = 'suppliers'; go('anag'); editSupplier(id); }
 
 function companies() {
   let h = `${can('aziende.crea') ? '<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-newco>+ Nuova azienda</button></div>' : ''}<div class="list">`;

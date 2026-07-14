@@ -6,8 +6,9 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exportData, importData, applyChanges, resetData, seedIfEmpty, counts, getInvoiceXml } from './server/serialize.js';
+import { exportData, importData, applyChanges, resetData, seedIfEmpty, counts, getInvoiceXml, collectChangeEvents } from './server/serialize.js';
 import { putAttachment, getAttachment, deleteAttachment } from './server/attachments.js';
+import { logEvent, logMany, listAudit, auditFacets } from './server/audit.js';
 import { backupDb } from './server/db.js';
 import * as updater from './server/updater.js';
 import { createSession, getSession, destroySession, destroySessionsOfUser, verifyPassword } from './server/auth.js';
@@ -123,6 +124,8 @@ async function api(req, res, url) {
       if (!me.row || !verifyPassword(b?.attuale || '', me.row.password_hash)) return json(res, 400, { error: 'Password attuale errata' });
       if (!b.nuova || String(b.nuova).length < 4) return json(res, 400, { error: 'La nuova password è troppo corta' });
       setPassword(me.row.id, b.nuova);
+      // Registra SOLO il fatto (cambio password), mai la password o l'hash.
+      logEvent({ username: user.username, action: 'password', collection: 'utenti', record_id: me.row.id, label: '@' + user.username });
       return json(res, 200, { ok: true });
     }
   }
@@ -156,7 +159,11 @@ async function api(req, res, url) {
       const b = await readBody(req);
       if (b == null) return json(res, 400, { error: 'JSON non valido' });
       const force = url.searchParams.get('force') === '1';
-      try { return json(res, 200, { ok: true, ...importData(b, { force }) }); }
+      try {
+        const r = importData(b, { force });
+        logEvent({ username: user.username, action: 'import', label: 'Sostituzione totale dei dati', details: r.counts });
+        return json(res, 200, { ok: true, ...r });
+      }
       catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     }
   }
@@ -171,7 +178,14 @@ async function api(req, res, url) {
     const toccaCollezioni = b.collections && typeof b.collections === 'object' &&
       Object.values(b.collections).some((ch) => ch && ((ch.upsert && ch.upsert.length) || (ch.remove && ch.remove.length)));
     if (toccaCollezioni && !canWriteData(user)) return forbid();
-    try { return json(res, 200, { ok: true, ...applyChanges(b) }); }
+    try {
+      // Audit: si classificano i cambi (crea/modifica/elimina) leggendo lo stato PRIMA
+      // di applicare; si scrive il registro solo se l'operazione va a buon fine.
+      const events = toccaCollezioni ? collectChangeEvents(b) : [];
+      const r = applyChanges(b);
+      if (events.length) logMany(user.username, events);
+      return json(res, 200, { ok: true, ...r });
+    }
     catch (e) {
       if (e && e.conflict) return json(res, 409, { error: 'conflict', rev: e.rev }); // revisione superata: il client ricarica o forza
       return json(res, 400, { error: String(e.message || e) });
@@ -180,7 +194,20 @@ async function api(req, res, url) {
 
   if (resource === 'reset' && method === 'POST') {
     if (!need('dati.reset')) return forbid();
-    return json(res, 200, { ok: true, ...resetData() });
+    const r = resetData();
+    logEvent({ username: user.username, action: 'reset', label: 'Azzeramento di tutti i dati' });
+    return json(res, 200, { ok: true, ...r });
+  }
+
+  // ---- REGISTRO ATTIVITÀ (audit log): sola lettura, gated da audit.view ----
+  if (resource === 'audit' && method === 'GET') {
+    if (!need('audit.view')) return forbid();
+    if (id === 'facets') return json(res, 200, auditFacets());
+    const p = url.searchParams;
+    return json(res, 200, listAudit({
+      limit: p.get('limit'), offset: p.get('offset'),
+      q: p.get('q') || '', action: p.get('action') || '', user: p.get('user') || '',
+    }));
   }
 
   // ---- AGGIORNAMENTO SOFTWARE ----
@@ -245,7 +272,11 @@ async function api(req, res, url) {
     if (method === 'GET' && !id) return json(res, 200, listPublic());
     if (method === 'POST' && !id) {
       const b = await readBody(req);
-      try { return json(res, 201, createUser(b || {})); }
+      try {
+        const pub = createUser(b || {});
+        logEvent({ username: user.username, action: 'crea', collection: 'utenti', record_id: pub.id, label: '@' + pub.username });
+        return json(res, 201, pub);
+      }
       catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
     }
     if (method === 'PUT' && id) {
@@ -253,12 +284,19 @@ async function api(req, res, url) {
       try {
         const pub = updateUser(id, b || {});
         destroySessionsOfUser(Number(id)); // permessi/ruolo cambiati → nuovo login
+        // Nessuna password/hash nel registro: solo che l'account è stato modificato.
+        logEvent({ username: user.username, action: 'modifica', collection: 'utenti', record_id: pub.id, label: '@' + pub.username });
         return json(res, 200, pub);
       } catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
     }
     if (method === 'DELETE' && id) {
       if (Number(id) === user.id) return json(res, 409, { error: 'Non puoi eliminare te stesso' });
-      try { const r = removeUser(id); destroySessionsOfUser(Number(id)); return json(res, 200, r); }
+      try {
+        const target = getByIdAttivo(Number(id));
+        const r = removeUser(id); destroySessionsOfUser(Number(id));
+        logEvent({ username: user.username, action: 'elimina', collection: 'utenti', record_id: id, label: target ? '@' + target.username : String(id) });
+        return json(res, 200, r);
+      }
       catch (e) { return json(res, e.code || 400, { error: String(e.message || e) }); }
     }
   }

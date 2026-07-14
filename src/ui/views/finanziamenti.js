@@ -1,5 +1,5 @@
 // ============ Vista Rateizzazioni (mutui, prestiti, leasing, dilazioni) ============
-import { data, save, attachmentsReady, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
+import { data, save, addAttachment, readAttachment, deleteAttachment } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, fmtDateFull, parseAmount, todayStr, round2, uid } from '../../domain/util.js';
 import { activeCompany, acc, co, txLabel } from '../../domain/finance.js';
@@ -84,24 +84,18 @@ function detail(l) {
 }
 
 const fmtSize = b => { b = b || 0; return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; };
+// Allegati (PDF) della rateizzazione: metadati in loan.attachments[] (nel doc, round-trippano
+// col loan); binari come BLOB nella tabella standalone attachments_bin via /api/attachments.
+// Stesso identico pattern delle fatture (vedi attBlock in views/fatture.js).
 function attachmentsBlock(l) {
-  const w = can('finanziamenti.allegati');
+  const w = can('finanziamenti.allegati');   // aggiunta/eliminazione allegati = permesso di scrittura dedicato
   const atts = l.attachments || [];
-  let h = '';
-  if (atts.length) {
-    h += `<div class="list">${atts.map(a => `<div class="row">
+  let h = atts.length ? `<div class="list">${atts.map(a => `<div class="row">
       <div class="emoji">📎</div>
       <div class="mid" data-att-open="${a.id}" style="cursor:pointer"><div class="t1">${esc(a.name)}</div><div class="t2">${fmtSize(a.size)}${a.addedAt ? ' · ' + new Date(a.addedAt).toLocaleDateString('it-IT') : ''}</div></div>
       ${w ? `<button class="btn sm danger" data-att-del="${a.id}">Elimina</button>` : ''}
-    </div>`).join('')}</div>`;
-  } else if (attachmentsReady()) {
-    h += `<div class="card empty" style="padding:18px">Nessun allegato.</div>`;
-  }
-  if (attachmentsReady() && w) {
-    h += `<div class="btnrow" style="margin-top:10px"><button class="btn" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" style="display:none"></div>`;
-  } else if (!attachmentsReady()) {
-    h += `<div class="card empty" style="padding:18px">Allegati non ancora disponibili in questa versione server (in arrivo).</div>`;
-  }
+    </div>`).join('')}</div>` : `<div class="card empty" style="padding:14px">Nessun allegato.</div>`;
+  if (w) h += `<div class="btnrow" style="margin-top:10px"><button class="btn sm" data-att-add>+ Aggiungi allegato</button><input type="file" id="att_input" accept="application/pdf,.pdf" style="display:none"></div>`;
   return h;
 }
 

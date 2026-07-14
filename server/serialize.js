@@ -186,6 +186,51 @@ export function applyChanges(cs) {
   return { rev: currentRev(), counts: counts() };
 }
 
+// ---- Audit: descrizione dei cambi (per il registro attività) ---------------
+// Etichetta leggibile derivata dal doc, per collezione. Serve al registro attività.
+const AUDIT_LABEL = {
+  transactions: (o) => o.note || o.desc || (o.amount != null ? String(o.amount) : ''),
+  invoices: (o) => o.number ? 'N. ' + o.number : (o.supplierName || ''),
+  suppliers: (o) => o.name || '',
+  companies: (o) => o.name || '',
+  accounts: (o) => o.name || '',
+  categories: (o) => o.name || '',
+  rules: (o) => o.keyword ? 'contiene "' + o.keyword + '"' : '',
+  scheduled: (o) => o.description || '',
+  loans: (o) => o.name || o.lender || '',
+  // `log` (storico eventi fatture, append-only interno) NON viene auditato: sarebbe rumore
+  // ridondante rispetto ai fatti già registrati (pagamenti, riconciliazioni…).
+};
+function auditLabel(key, o) {
+  const f = AUDIT_LABEL[key];
+  const v = f && o ? f(o) : '';
+  return v ? String(v).slice(0, 200) : (o && o.id != null ? String(o.id) : '');
+}
+
+// Ispeziona il changeset PRIMA di applicarlo per classificare ogni record come
+// crea (non esisteva) / modifica (esisteva) / elimina. Legge lo stato attuale del DB.
+// Ritorna [{ action, collection, record_id, label }]. Salta la collezione `log`.
+export function collectChangeEvents(cs) {
+  if (!cs || typeof cs.collections !== 'object') return [];
+  const out = [];
+  for (const [key, ch] of Object.entries(cs.collections)) {
+    const c = byKey[key];
+    if (!c || !ch || !AUDIT_LABEL[key]) continue; // collezione sconosciuta o non auditata (log)
+    for (const id of ch.remove || []) {
+      const row = db.prepare(`SELECT doc FROM ${c.table} WHERE id=?`).get(id);
+      const doc = row ? safeParseDoc(row.doc) : null;
+      out.push({ action: 'elimina', collection: key, record_id: id, label: auditLabel(key, doc || { id }) });
+    }
+    for (const obj of ch.upsert || []) {
+      if (!obj || obj.id == null) continue;
+      const exists = db.prepare(`SELECT 1 FROM ${c.table} WHERE id=?`).get(obj.id);
+      out.push({ action: exists ? 'modifica' : 'crea', collection: key, record_id: obj.id, label: auditLabel(key, obj) });
+    }
+  }
+  return out;
+}
+function safeParseDoc(s) { try { return JSON.parse(s); } catch { return null; } }
+
 // ---- Utilità ---------------------------------------------------------------
 export function counts() {
   const out = { rev: currentRev() };

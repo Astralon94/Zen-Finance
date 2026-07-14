@@ -17,8 +17,10 @@ import * as fin from './views/finanziamenti.js';
 import { countOverdue as loanOverdueCount } from './views/finanziamenti.js';
 import * as pnl from './views/pnl.js';
 import * as anag from './views/anagrafiche.js';
+import * as attivita from './views/attivita.js';
 import * as settings from './views/impostazioni.js';
 import * as utenti from './views/utenti.js';
+import { openSearch, canSearch } from './search.js';
 
 const VIEWS = {
   dash: { mod: dash, title: 'Dashboard', icon: '◷' },
@@ -29,10 +31,11 @@ const VIEWS = {
   fin: { mod: fin, title: 'Rateizzazioni', icon: '🏦' },
   pnl: { mod: pnl, title: 'Conto economico', icon: '📊' },
   anag: { mod: anag, title: 'Anagrafiche', icon: '👤' },
+  attivita: { mod: attivita, title: 'Attività', icon: '🕘' },
   set: { mod: settings, title: 'Impostazioni', icon: '⚙' },
   utenti: { mod: utenti, title: 'Utenti', icon: '👥' }
 };
-const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'utenti', 'set'];
+const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'attivita', 'utenti', 'set'];
 
 let current = 'dash';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -184,6 +187,7 @@ export function renderApp() {
       <span class="brand">Zen Finance</span>
       <span class="savebadge" id="saveBadge" title="Stato del salvataggio sul database" style="font-size:12px;font-weight:600;white-space:nowrap;margin-left:10px">${saveBadgeInner()}</span>
       <span class="spacer"></span>
+      ${canSearch() ? '<button class="iconbtn" id="searchBtn" title="Cerca (⌘K)" aria-label="Cerca">🔎</button>' : ''}
       ${companySelect()}
       ${userMenu()}
     </div>
@@ -194,6 +198,9 @@ export function renderApp() {
   const menu = app.querySelector('#navMenu');
   toggle.onclick = e => { e.stopPropagation(); menu.classList.toggle('open'); };
   menu.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { menu.classList.remove('open'); go(b.dataset.go); });
+
+  // ricerca globale (⌘K)
+  app.querySelector('#searchBtn')?.addEventListener('click', () => openSearch());
 
   // company
   const sel = app.querySelector('#coSel');
@@ -223,9 +230,20 @@ export function renderApp() {
   if (v.bind) v.bind(root);
 }
 
+// Ricerca globale da tastiera: ⌘K (macOS) / Ctrl+K. Registrato una sola volta.
+function bindSearchHotkey() {
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      if (!canSearch()) return;
+      e.preventDefault();
+      openSearch();
+    }
+  });
+}
+
 // re-render quando lo store cambia (mantiene la vista corrente)
 let booted = false;
 export function startUI() {
-  if (!booted) { subscribe(() => renderApp()); onSaveStatus(refreshSaveBadge); booted = true; }
+  if (!booted) { subscribe(() => renderApp()); onSaveStatus(refreshSaveBadge); bindSearchHotkey(); booted = true; }
   renderApp();
 }

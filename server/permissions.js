@@ -86,6 +86,7 @@ export const PERMISSIONS = [
   { key: 'regole.elimina',       group: 'Anagrafiche',    label: 'Eliminare le regole', write: true },
 
   // ---- Configurazione (non concorrono a DATA_MANAGE) ----
+  { key: 'audit.view',           group: 'Configurazione', label: 'Consultare il registro attività' },
   { key: 'impostazioni.manage',  group: 'Configurazione', label: 'Gestire aspetto e manutenzione' },
   { key: 'software.aggiorna',    group: 'Configurazione', label: 'Controllare e installare gli aggiornamenti software' },
   { key: 'dati.export',          group: 'Configurazione', label: 'Esportare il backup JSON' },
@@ -106,6 +107,7 @@ export const NAV = [
   { key: 'fin',    icon: '🏦', label: 'Rateizzazioni',   perm: 'finanziamenti.view' },
   { key: 'pnl',    icon: '📊', label: 'Conto economico', perm: 'pnl.view' },
   { key: 'anag',   icon: '👤', label: 'Anagrafiche',     perm: 'anagrafiche.view' },
+  { key: 'attivita', icon: '🕘', label: 'Attività',      perm: 'audit.view' },
   { key: 'utenti', icon: '👥', label: 'Utenti',          perm: 'utenti.manage' },
   { key: 'set',    icon: '⚙',  label: 'Impostazioni',    perm: 'impostazioni.manage', any: ['impostazioni.manage', 'software.aggiorna', 'dati.export', 'dati.import', 'dati.reset'] },
 ];

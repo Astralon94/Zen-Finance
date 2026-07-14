@@ -38,6 +38,21 @@ function ddl() {
       attivo        INTEGER NOT NULL DEFAULT 1,
       creato_il     TEXT    NOT NULL
     );
+    -- Registro attività (audit log): tabella STANDALONE come utenti/attachments_bin.
+    -- Fuori da COLLECTIONS/serialize → import/export/reset/changes NON la toccano mai:
+    -- il registro SOPRAVVIVE a un import o a un azzeramento dei dati. Additiva: i DB
+    -- esistenti la ricevono al primo avvio. Cap ~20000 righe (trim all'inserimento).
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts         INTEGER NOT NULL,   -- epoch ms
+      username   TEXT,               -- chi ha agito (mai la password)
+      action     TEXT,               -- crea | modifica | elimina | import | reset | password
+      collection TEXT,               -- transactions | invoices | … | utenti (null per import/reset)
+      record_id  TEXT,               -- id del record toccato (null per import/reset)
+      label      TEXT,               -- etichetta leggibile derivata dal doc
+      details    TEXT                -- JSON opzionale (conteggi, metadati); MAI segreti
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
   `;
   for (const c of COLLECTIONS) {
     const cols = c.cols.map((x) => `${x.n} ${x.type}`).join(', ');
