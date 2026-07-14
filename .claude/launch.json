@@ -5,7 +5,8 @@
       "name": "zen-finance-server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
-      "port": 4331
+      "port": 4431,
+      "env": { "PORT": "4431" }
     }
   ]
 }
