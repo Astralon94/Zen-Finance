@@ -175,10 +175,11 @@ export function buildRows(matrix, map) {
 //    dello stesso file resta riconosciuto come duplicato.
 export function commitBankRows(rows, accountId) {
   const a = acc(accountId);
-  if (!a) return { added: 0, skipped: 0 };
+  if (!a) return { added: 0, skipped: 0, undo: null };
   const companyId = a.companyId;
   const existing = new Set(data.transactions.filter(t => t.impHash).map(t => t.impHash));
   const counter = new Map();
+  const createdTxIds = []; // per l'undo di sessione (vedi src/ui/importundo.js)
   let added = 0, skipped = 0;
   rows.forEach(row => {
     let key;
@@ -197,9 +198,17 @@ export function commitBankRows(rows, accountId) {
     };
     applyRules(t, { onlyEmpty: true });
     data.transactions.push(t);
+    createdTxIds.push(t.id);
     existing.add(key);
     added++;
   });
   if (added) save();
-  return { added, skipped };
+  // L'import estratto conto crea SOLO movimenti (nessun record esistente modificato):
+  // l'undo si limita a rimuovere gli id creati.
+  const undo = added ? {
+    type: 'bank', companyId, permission: 'movimenti.importa', count: added, noun: 'movimento',
+    creates: createdTxIds.map(id => ({ key: 'transactions', id })),
+    restores: [], attachments: [],
+  } : null;
+  return { added, skipped, undo };
 }

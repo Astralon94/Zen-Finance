@@ -15,6 +15,7 @@ import { recentEvents, EVENT_VERB, LOG_CAP } from '../../domain/auditlog.js';
 import { companyOptions, accountOptions, categoryOptions, supplierOptions, supplierPicker, bindCombos } from '../forms.js';
 import { importFiles } from '../../importers/index.js';
 import { commitDrafts } from '../../importers/commit.js';
+import { registerImport } from '../importundo.js';
 import { openXmlViewer } from './xmlview.js';
 import { renderBody as payBody, bindBody as payBind, countToPay } from './pagamenti.js';
 import { mountPicker } from '../matchpicker.js';
@@ -378,7 +379,8 @@ function openImportPreview(drafts, errors, dupInBatch) {
         btn.disabled = true; btn.textContent = nAtt ? 'Import e allegati…' : 'Import…';
         const r = await commitDrafts(drafts, sheet.querySelector('#imp_co').value);
         closeSheet();
-        toast(`${r.added} importate${r.attached ? ` · ${r.attached} allegat${r.attached === 1 ? 'o' : 'i'}` : ''}${r.skipped ? ` · ${r.skipped} già presenti` : ''}`);
+        if (r.added) { registerImport(r.undo); if (r.attached || r.skipped) toast(`${r.attached ? r.attached + ' allegati' : ''}${r.attached && r.skipped ? ' · ' : ''}${r.skipped ? r.skipped + ' già presenti' : ''}`); }
+        else toast(r.skipped ? `${r.skipped} già presenti` : 'Nessuna fattura importata');
       };
     });
 }

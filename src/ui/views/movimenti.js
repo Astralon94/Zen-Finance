@@ -8,6 +8,7 @@ import { exportTable, scopeLabel, nowStamp } from '../pdf.js';
 import { companyOptions, accountOptions, categoryOptions, supplierPicker, bindCombos } from '../forms.js';
 import { applyRules, suggestKeyword, reapplyAll } from '../../domain/rules.js';
 import { readMatrix, detect, buildRows, commitBankRows } from '../../importers/bankxls.js';
+import { registerImport } from '../importundo.js';
 import { parseBankXml, looksLikeBankXml } from '../../importers/bankxml.js';
 import { candidates, reconcileMany, ignoreRecon, searchInvoices } from '../../domain/reconcile.js';
 import { invResiduo, supNameOf, invTotal, isTxReconciled, unlinkTx, txLinkedInvoices, removePayment, mgmtState, txIsLinked, MGMT } from '../../domain/invoices.js';
@@ -298,7 +299,8 @@ function openBankPreview(rows, iban, fileName = '', label = '', next = () => {})
         closeSheet();
         filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
         const r = commitBankRows(rows, accId);
-        toast(`${r.added} movimenti importati${r.skipped ? ` · ${r.skipped} duplicati` : ''}`);
+        if (r.added) { registerImport(r.undo); if (r.skipped) toast(`${r.skipped} duplicati ignorati`); }
+        else toast('Nessun movimento importato');
         next();
       };
     });
@@ -372,7 +374,8 @@ function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
       closeSheet();
       filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
       const r = commitBankRows(rows, accId);
-      toast(`${r.added} movimenti importati${r.skipped ? ` · ${r.skipped} duplicati` : ''}`);
+      if (r.added) { registerImport(r.undo); if (r.skipped) toast(`${r.skipped} duplicati ignorati`); }
+      else toast('Nessun movimento importato');
       next();
     };
   });
