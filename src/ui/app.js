@@ -87,7 +87,7 @@ function saveBadgeInner() {
     conflict: { c: '#c2685f', dot: '⚠', t: 'Conflitto — risolvi' },
   };
   const m = conf[saveStatus()] || conf.saved;
-  return `<span style="color:${m.c}">${m.dot} ${m.t}</span>`;
+  return `<span style="color:${m.c}">${m.dot} <span class="sb-txt">${m.t}</span></span>`;
 }
 function refreshSaveBadge() {
   const el = document.getElementById('saveBadge');

@@ -179,11 +179,50 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 .sheet .sheetsub { color: var(--sub); font-size: 13px; margin-bottom: 16px; }
 .sheet .actions { display: flex; gap: 9px; margin-top: 18px; }
 .sheet .actions .btn { flex: 1; justify-content: center; text-align: center; }
-@media (max-width: 560px) {
-  .sheet { top: auto; bottom: 0; transform: translate(-50%, 100%); width: 100vw; border-radius: 18px 18px 0 0; max-height: 92vh; }
-  .sheet.show { transform: translate(-50%, 0); }
-  .grid.k4 { grid-template-columns: repeat(2, 1fr); } .grid.k3 { grid-template-columns: repeat(2, 1fr); }
+/* ============ Responsive: tablet ≤900px, telefono ≤600px ============ */
+/* Il layout desktop resta invariato sopra questi breakpoint. Solo token esistenti. */
+@media (max-width: 900px) {
+  .topbar { padding: 10px 14px; gap: 8px; }
+  #view { padding: 22px 16px 90px; }
+  .grid.k4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  /* topbar compatta: dove il testo è ridondante restano solo le icone */
+  .topbar { padding: 9px 12px; gap: 7px; }
   .topbar .brand { display: none; }
+  .savebadge .sb-txt { display: none; }               /* resta solo il pallino di stato colorato */
+  #navToggle > span:last-child { display: none; }     /* etichetta sezione (c'è già l'h1 della pagina) */
+  #userToggle > span:nth-child(2) { display: none; }  /* nome utente: restano 👤 e ▾ */
+  .selbox { max-width: 40vw; }
+
+  #view { padding: 16px 12px 84px; }
+  .pagehead { margin: 4px 0 18px; }
+  .pagehead h1 { font-size: 21px; }
+
+  /* KPI/cards: due colonne su telefono (min-width:0 evita overflow da contenuto nowrap) */
+  .grid.k4, .grid.k3 { grid-template-columns: repeat(2, 1fr); }
+  .grid > * { min-width: 0; }
+
+  /* font ≥16px sugli input per evitare l'auto-zoom di iOS al focus */
+  input, select, textarea { font-size: 16px; }
+
+  /* form multi-colonna → una colonna: solo le righe di campi, non le righe di controllo */
+  .frow:has(> .field) { flex-direction: column; gap: 0; }
+  .frow:has(> .field) > .field { flex: 1 1 auto !important; width: 100%; }
+
+  /* target touch più ampi (≥40px) */
+  .btn { padding: 11px 15px; }
+  .btn.sm { padding: 8px 12px; }
+  .iconbtn { width: 40px; height: 40px; }
+  .row { padding: 14px 14px; }
+  .navmenu button { padding: 11px 12px; }
+
+  /* sheet/modale a tutta larghezza dal basso */
+  .sheet { top: auto; bottom: 0; transform: translate(-50%, 100%); width: 100vw; border-radius: 18px 18px 0 0; max-height: 92vh; padding: 18px 16px max(22px, env(safe-area-inset-bottom)); }
+  .sheet.show { transform: translate(-50%, 0); }
+
+  /* tabelle nei contenitori scrollabili: densità ridotta per stare meglio in larghezza */
+  table.tbl th, table.tbl td { padding: 7px 8px; }
 }
 
 /* ---- ricerca globale (command palette, ⌘K) ---- */
