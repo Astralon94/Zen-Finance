@@ -1,7 +1,7 @@
 // ============ Shell applicativa: topbar, nav a tendina, router ============
 import './styles.css';
 import { data, subscribe, save, onSaveStatus, saveStatus, reloadFromServer, forceSave } from '../state/store.js';
-import { logout, can, canSeeNav, changePassword, user, meta } from '../state/auth.js';
+import { logout, can, canSeeNav, changePassword, user, meta, onSessionExpired } from '../state/auth.js';
 import { openSheet, closeSheet, toast } from './dom.js';
 import { esc } from '../domain/util.js';
 import { invoicesInScope, invResiduo, invOverdue } from '../domain/invoices.js';
@@ -89,10 +89,40 @@ function saveBadgeInner() {
   const m = conf[saveStatus()] || conf.saved;
   return `<span style="color:${m.c}">${m.dot} <span class="sb-txt">${m.t}</span></span>`;
 }
+let errorAlerted = false;
 function refreshSaveBadge() {
   const el = document.getElementById('saveBadge');
   if (el) el.innerHTML = saveBadgeInner();
-  if (saveStatus() === 'conflict') showConflictDialog();
+  const st = saveStatus();
+  if (st === 'conflict') showConflictDialog();
+  else if (st === 'error') { if (!errorAlerted) { errorAlerted = true; showSaveErrorDialog(); } }
+  else errorAlerted = false;
+}
+
+// Salvataggio fallito (rete assente, Cloudflare Access che richiede nuovo login, server
+// irraggiungibile): avviso bloccante alla PRIMA occorrenza, per non far continuare a
+// inserire dati che rischiano di andare persi mentre la spia resta rossa.
+function showSaveErrorDialog() {
+  openSheet(`
+    <h2>▲ Salvataggio non riuscito</h2>
+    <div class="sheetsub">Il server non ha confermato l'ultimo salvataggio: connessione assente, sessione scaduta o server non raggiungibile. L'app riprova automaticamente, ma finché la spia in alto resta rossa i dati che inserisci ora rischiano di andare persi.</div>
+    <div class="muted" style="font-size:13px;margin:8px 0 0">Evita di inserire altri dati finché la spia non torna verde su "Salvato". Se il problema persiste, verifica la connessione o rifai il login.</div>
+    <div class="actions"><button class="btn primary" data-ok>Ho capito</button></div>`,
+    sheet => { sheet.querySelector('[data-ok]').onclick = closeSheet; });
+}
+
+// Sessione scaduta lato app (401): NON ricarica subito (perderebbe input non salvati).
+// Mostra un avviso bloccante; l'utente ricarica quando è pronto (dopo aver eventualmente
+// copiato ciò che stava scrivendo).
+let sessionAlerted = false;
+function showSessionExpiredDialog() {
+  if (sessionAlerted) return;
+  sessionAlerted = true;
+  openSheet(`
+    <h2>⚠️ Sessione scaduta</h2>
+    <div class="sheetsub">Devi accedere di nuovo. <b>Non ricaricare</b> finché non hai eventualmente copiato altrove i dati che stavi inserendo e che non risultano ancora salvati (spia in alto).</div>
+    <div class="actions"><button class="btn primary" data-reload>Ricarica e accedi</button></div>`,
+    sheet => { sheet.querySelector('[data-reload]').onclick = () => location.reload(); });
 }
 
 // Conflitto di concorrenza (409): un'altra scheda/dispositivo ha modificato i dati.
@@ -244,6 +274,6 @@ function bindSearchHotkey() {
 // re-render quando lo store cambia (mantiene la vista corrente)
 let booted = false;
 export function startUI() {
-  if (!booted) { subscribe(() => renderApp()); onSaveStatus(refreshSaveBadge); bindSearchHotkey(); booted = true; }
+  if (!booted) { subscribe(() => renderApp()); onSaveStatus(refreshSaveBadge); onSessionExpired(showSessionExpiredDialog); bindSearchHotkey(); booted = true; }
   renderApp();
 }

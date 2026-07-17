@@ -507,6 +507,8 @@ export function openInvoice(id) {
     <div class="sheetsub">${i.number ? 'N. ' + esc(i.number) + ' · ' : ''}${i.date ? fmtDateFull(i.date) : ''}${i.due ? ' · scad. ' + fmtDateFull(i.due) : ''} · ${esc(co(i.companyId)?.name || '')}</div>
     <div class="list" style="margin-bottom:8px">
       ${line('Totale documento', fmt(invTotal(i)))}
+      ${i.isParcella && i.parcCassaPct ? line('di cui cassa previdenziale', fmt(round2((i.parcFee || 0) * i.parcCassaPct / 100))) : ''}
+      ${i.isParcella && i.parcArt15 ? line('di cui escluso art. 15', fmt(i.parcArt15)) : ''}
       ${wh ? line('Ritenuta', '− ' + fmt(wh), 'neg') : ''}
       ${line('Da pagare', fmt(pay))}
       ${line('Pagato', fmt(invPaid(i)), 'pos')}
@@ -635,6 +637,18 @@ export function openInvoiceEditor(id) {
       <div class="field"><label>Data</label><input id="i_date" type="date" value="${i?.date || todayStr()}"></div>
       <div class="field"><label>Scadenza</label><input id="i_due" type="date" value="${i?.due || ''}"></div>
     </div>
+    <div class="field"><label><input type="checkbox" id="i_parc" ${i?.isParcella ? 'checked' : ''}> 🧾 Parcella professionale (cassa previdenziale)</label></div>
+    <div id="i_parcbox" style="${i?.isParcella ? '' : 'display:none'}">
+      <div class="frow">
+        <div class="field"><label>Onorario</label><input id="i_fee" inputmode="decimal" value="${i?.parcFee != null ? String(i.parcFee).replace('.', ',') : ''}"></div>
+        <div class="field"><label>% Cassa previdenziale</label><input id="i_cassa" inputmode="decimal" value="${i?.parcCassaPct != null ? String(i.parcCassaPct).replace('.', ',') : '4'}"></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>% IVA</label><input id="i_vatpct" inputmode="decimal" value="${i?.parcVatPct != null ? String(i.parcVatPct).replace('.', ',') : '22'}"></div>
+        <div class="field"><label>% Ritenuta</label><input id="i_whpct" inputmode="decimal" value="${i?.parcWhPct != null ? String(i.parcWhPct).replace('.', ',') : '20'}"></div>
+      </div>
+      <div class="field"><label>Escluso art. 15 DPR 633/72 (€)</label><input id="i_art15" inputmode="decimal" value="${i?.parcArt15 != null ? String(i.parcArt15).replace('.', ',') : ''}"></div>
+    </div>
     <div class="frow">
       <div class="field"><label>Imponibile</label><input id="i_net" inputmode="decimal" value="${i?.net != null ? String(i.net).replace('.', ',') : ''}"></div>
       <div class="field"><label>IVA</label><input id="i_vat" inputmode="decimal" value="${i?.vat != null ? String(i.vat).replace('.', ',') : ''}"></div>
@@ -654,6 +668,30 @@ export function openInvoiceEditor(id) {
         if ((net || vat) && document.activeElement !== g('#i_tot')) g('#i_tot').value = String(round2(net + vat)).replace('.', ',');
       };
       g('#i_net').oninput = recalc; g('#i_vat').oninput = recalc;
+      // Parcella professionale: scompone onorario/cassa/iva/ritenuta/art.15 nei campi standard
+      const recalcParc = () => {
+        if (!g('#i_parc').checked) return;
+        const fee = parseAmount(g('#i_fee').value) || 0;
+        const cassaPct = parseAmount(g('#i_cassa').value) || 0;
+        const vatPct = parseAmount(g('#i_vatpct').value) || 0;
+        const whPct = parseAmount(g('#i_whpct').value) || 0;
+        const art15 = parseAmount(g('#i_art15').value) || 0;
+        const cassaAmount = round2(fee * cassaPct / 100);
+        const net = round2(fee + cassaAmount);
+        const vat = round2(net * vatPct / 100);
+        const wh = round2(fee * whPct / 100);
+        const total = round2(net + vat + art15);
+        const ae = document.activeElement;
+        if (ae !== g('#i_net')) g('#i_net').value = String(net).replace('.', ',');
+        if (ae !== g('#i_vat')) g('#i_vat').value = String(vat).replace('.', ',');
+        if (ae !== g('#i_wh')) g('#i_wh').value = String(wh).replace('.', ',');
+        if (ae !== g('#i_tot')) g('#i_tot').value = String(total).replace('.', ',');
+      };
+      ['#i_fee', '#i_cassa', '#i_vatpct', '#i_whpct', '#i_art15'].forEach(sel => g(sel).oninput = recalcParc);
+      g('#i_parc').onchange = () => {
+        g('#i_parcbox').style.display = g('#i_parc').checked ? '' : 'none';
+        if (g('#i_parc').checked) recalcParc();
+      };
       g('[data-cancel]').onclick = () => id ? openInvoice(id) : closeSheet();
       g('[data-save]').onclick = () => {
         let total = parseAmount(g('#i_tot').value);
@@ -669,6 +707,17 @@ export function openInvoiceEditor(id) {
           creditNote: g('#i_ndc').checked,
           categoryId: g('#i_cat').value, note: g('#i_note').value.trim()
         };
+        if (g('#i_parc').checked) {
+          rec.isParcella = true;
+          rec.parcFee = parseAmount(g('#i_fee').value) || 0;
+          rec.parcCassaPct = parseAmount(g('#i_cassa').value) || 0;
+          rec.parcVatPct = parseAmount(g('#i_vatpct').value) || 0;
+          rec.parcWhPct = parseAmount(g('#i_whpct').value) || 0;
+          rec.parcArt15 = parseAmount(g('#i_art15').value) || 0;
+        } else if (id && i?.isParcella) {
+          rec.isParcella = undefined; rec.parcFee = undefined; rec.parcCassaPct = undefined;
+          rec.parcVatPct = undefined; rec.parcWhPct = undefined; rec.parcArt15 = undefined;
+        }
         if (id) { Object.assign(i, rec); save(); toast(rec.creditNote ? 'Nota di credito aggiornata ✓' : 'Fattura aggiornata ✓'); openInvoice(id); }
         else { data.invoices.push({ id: uid(), ...rec, payments: [], attachments: [], toPay: false, source: 'manual', xml: null, createdAt: Date.now() }); save(); closeSheet(); toast(rec.creditNote ? 'Nota di credito creata ✓' : 'Fattura creata ✓'); }
       };

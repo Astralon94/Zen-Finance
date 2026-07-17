@@ -1,10 +1,17 @@
 // ============ Autenticazione lato client ============
 // Stato di sessione del browser: token Bearer in localStorage, utente pubblico e
 // registro permessi (meta). Tutte le fetch dati passano da authFetch(), che inietta
-// l'header Authorization e, su 401, riporta l'app alla schermata di login.
+// l'header Authorization e, su 401, azzera la sessione e NOTIFICA i listener
+// (onSessionExpired) invece di ricaricare subito: è la UI a decidere quando
+// ricaricare, per non perdere dati non ancora salvati che l'utente sta scrivendo.
 // Nota: NON si persiste l'utente/meta (solo il token): al reload si ricarica da /me.
 
 const TOKEN_KEY = 'zenfinance_token';
+
+// Listener notificati quando la sessione scade (401 lato app): la UI mostra un
+// avviso bloccante e ricarica solo su conferma, senza perdere input non salvati.
+const sessionListeners = new Set();
+export function onSessionExpired(fn) { sessionListeners.add(fn); return () => sessionListeners.delete(fn); }
 
 // Utente pubblico corrente: { id, username, nome, ruolo, permessi[], attivo } o null.
 export let user = null;
@@ -83,7 +90,8 @@ export async function logout() {
 
 // Wrapper di fetch che inietta il Bearer token (se presente), fondendo gli header
 // già passati senza sovrascriverli. Su 401 (fuori dal login) azzera la sessione e
-// ricarica la pagina, riportando alla schermata di login.
+// notifica i listener (onSessionExpired): NON ricarica qui, così la UI può avvisare
+// prima e non perdere input non ancora salvati.
 export async function authFetch(path, opts = {}) {
   const headers = new Headers(opts.headers || {});
   const t = getToken();
@@ -91,7 +99,7 @@ export async function authFetch(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401 && !String(path).startsWith('/auth/login') && !String(path).startsWith('/api/auth/login')) {
     clear();
-    if (typeof location !== 'undefined') location.reload();
+    sessionListeners.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
     throw new Error('Sessione scaduta');
   }
   return res;
