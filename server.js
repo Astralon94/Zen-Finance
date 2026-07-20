@@ -28,7 +28,7 @@ const EXIT_RESTART = 42;
 // URL del manifest "latest" (repo pubblica). Sovrascrivibile/disattivabile con la env ZEN_UPDATE_URL.
 const UPDATE_URL = process.env.ZEN_UPDATE_URL !== undefined
   ? process.env.ZEN_UPDATE_URL
-  : 'https://github.com/Astralon94/zen-finance-update/releases/latest/download/manifest.json';
+  : 'https://github.com/Astralon94/Zen-Finance/releases/latest/download/manifest.json';
 // Cache dell'ultimo controllo (per la UI, senza richiamare la rete a ogni richiesta).
 let ultimoCheck = { corrente: updater.currentVersion(__dirname), disponibile: false, controllato_il: null };
 

@@ -1,5 +1,5 @@
 // Costruisce il pacchetto di aggiornamento (JSON gzippato) e il manifest, da pubblicare
-// come release su GitHub (repo Astralon94/zen-finance-update).
+// come release su GitHub (repo del codice Astralon94/Zen-Finance, pubblica: ospita codice E release).
 // Uso:  node scripts/build-update.mjs [--note "testo"]
 // Produce:  dist/zen-finance-<version>.json.gz  e  dist/manifest.json
 // ATTENZIONE: il frontend runnable è public/index.html → esegui PRIMA `npm run build`
@@ -62,4 +62,4 @@ writeFileSync(join(distDir, 'manifest.json'), JSON.stringify({ version, note, pu
 console.log(`Pacchetto: dist/${nomePkg} (${relativi.length} file, ${(gz.length / 1024).toFixed(1)} KB)`);
 console.log('Manifest:  dist/manifest.json');
 console.log(`\nPubblica con:  gh release create v${version} dist/manifest.json dist/${nomePkg} \\`);
-console.log(`  --repo Astralon94/${APP_SLUG}-update --title "Zen-Finance ${version}" --notes "${note || '...'}"`);
+console.log(`  --repo Astralon94/Zen-Finance --title "Zen-Finance ${version}" --notes "${note || '...'}"`);
