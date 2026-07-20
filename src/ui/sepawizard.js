@@ -77,7 +77,7 @@ export function openSepaWizard() {
     execDate: tomorrowStr(),
     format: 'cbi',
     cbiVersion: '00.04.01',
-    headerless: false,
+    noCuc: false,
     cuc: (company?.cuc || '').toUpperCase(),
     batchBooking: true,
     registerPayments: false
@@ -242,15 +242,15 @@ function renderStep2() {
     </div>`;
   if (W.format === 'cbi') {
     h += `<div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-      <input type="checkbox" id="w_hdrless" ${W.headerless ? 'checked' : ''} style="width:18px;height:18px">
-      Senza intestazione (non serve il CUC)</label>
-      <div class="muted" style="font-size:11px">Alcuni portali (es. RelaxBanking delle BCC) accettano flussi CBI senza i tag dell'header e ricavano il mittente dal conto ordinante scelto in fase di import.</div></div>`;
-    if (!W.headerless) {
+      <input type="checkbox" id="w_hdrless" ${W.noCuc ? 'checked' : ''} style="width:18px;height:18px">
+      Non ho il CUC (usa il segnaposto NOTPROVIDED)</label>
+      <div class="muted" style="font-size:11px">Il file resta valido per lo schema CBI; i portali che ricavano il mittente dal conto ordinante scelto in fase di import (es. RelaxBanking delle BCC) lo accettano. Se la banca rifiuta il mittente, chiedi il CUC alla banca e inseriscilo.</div></div>`;
+    if (!W.noCuc) {
       h += `<div class="frow">
       <div class="field"><label>CUC <span class="muted" style="font-weight:400">(obbligatorio per CBI con intestazione)</span></label><input id="w_cuc" value="${esc(W.cuc)}" placeholder="es. ABCD1234"></div>
       <div class="field"><label>Tracciato</label><select id="w_ver"><option value="00.04.01" ${W.cbiVersion === '00.04.01' ? 'selected' : ''}>CBI 00.04.01</option><option value="00.04.00" ${W.cbiVersion === '00.04.00' ? 'selected' : ''}>CBI 00.04.00</option></select></div>
     </div>
-    ${!W.cuc ? '<div class="muted" style="font-size:11.5px;color:var(--neg)">Senza CUC il tracciato CBI con intestazione non è valido: inserisci il CUC, oppure spunta "Senza intestazione".</div>' : ''}`;
+    ${!W.cuc ? '<div class="muted" style="font-size:11.5px;color:var(--neg)">Inserisci il CUC, oppure spunta "Non ho il CUC" per usare il segnaposto.</div>' : ''}`;
     } else {
       h += `<div class="field"><label>Tracciato</label><select id="w_ver"><option value="00.04.01" ${W.cbiVersion === '00.04.01' ? 'selected' : ''}>CBI 00.04.01</option><option value="00.04.00" ${W.cbiVersion === '00.04.00' ? 'selected' : ''}>CBI 00.04.00</option></select></div>`;
     }
@@ -280,7 +280,7 @@ function bindStep2() {
   q('#w_date').onchange = () => { W.execDate = q('#w_date').value || tomorrowStr(); render(); };
   sheet.querySelectorAll('#w_fmt [data-f]').forEach(b => b.onclick = () => { W.format = b.dataset.f; render(); });
   const cuc = q('#w_cuc'); if (cuc) cuc.oninput = () => { W.cuc = cuc.value.toUpperCase(); };
-  const hdr = q('#w_hdrless'); if (hdr) hdr.onchange = () => { W.headerless = hdr.checked; render(); };
+  const hdr = q('#w_hdrless'); if (hdr) hdr.onchange = () => { W.noCuc = hdr.checked; render(); };
   const ver = q('#w_ver'); if (ver) ver.onchange = () => { W.cbiVersion = ver.value; };
   sheet.querySelectorAll('#w_batch [data-b]').forEach(b => b.onclick = () => { W.batchBooking = b.dataset.b === '1'; render(); });
   q('#w_reg').onchange = () => { W.registerPayments = q('#w_reg').checked; };
@@ -294,7 +294,7 @@ function bindStep2() {
     W.accountIban = iban;
     // salva l'IBAN sul conto se inserito a mano
     if (normalizeIban(chosen.iban || '') !== iban) { chosen.iban = iban; save(); }
-    if (W.format === 'cbi' && !W.headerless && !W.cuc.trim()) { toast('Inserisci il CUC oppure spunta "Senza intestazione"'); return; }
+    if (W.format === 'cbi' && !W.noCuc && !W.cuc.trim()) { toast('Inserisci il CUC oppure spunta "Non ho il CUC"'); return; }
     // salva il CUC sull'azienda se cambiato
     const company = co(cid);
     if (company && (company.cuc || '') !== W.cuc.trim()) { company.cuc = W.cuc.trim(); save(); }
@@ -327,7 +327,7 @@ function renderStep3() {
   const { txs, warnings } = buildPlan();
   const total = round2(txs.reduce((s, t) => s + t.amount, 0));
   let h = `${stepBar(3)}<h2>Riepilogo</h2>
-    <div class="sheetsub">${txs.length} bonific${txs.length === 1 ? 'o' : 'i'} · totale ${fmt(total)} · formato ${W.format === 'cbi' ? 'CBI ' + W.cbiVersion + (W.headerless ? ' senza intestazione' : '') : 'pain.001'}</div>`;
+    <div class="sheetsub">${txs.length} bonific${txs.length === 1 ? 'o' : 'i'} · totale ${fmt(total)} · formato ${W.format === 'cbi' ? 'CBI ' + W.cbiVersion + (W.noCuc ? ' · CUC segnaposto' : '') : 'pain.001'}</div>`;
   if (warnings.length) h += `<div class="card" style="background:var(--card2);font-size:12px;margin-bottom:10px">${warnings.map(w => '⚠️ ' + esc(w)).join('<br>')}</div>`;
   if (!txs.length) {
     h += `<div class="card empty">Nessun bonifico da generare.</div>
@@ -354,10 +354,9 @@ function doGenerate(txs) {
     xml = generateSepaXml({
       format: W.format,
       cbiVersion: W.cbiVersion,
-      headerless: W.format === 'cbi' && W.headerless,
       executionDate: W.execDate,
       batchBooking: W.batchBooking,
-      debtor: { name: company?.name || 'Ordinante', iban: W.accountIban, cuc: W.cuc },
+      debtor: { name: company?.name || 'Ordinante', iban: W.accountIban, cuc: W.noCuc ? '' : W.cuc },
       transactions: txs.map(t => ({ endToEndId: t.endToEndId, amount: t.amount, creditorName: t.creditorName, creditorIban: t.creditorIban, remittance: t.remittance }))
     });
   } catch (e) { toast('Errore: ' + e.message); return; }

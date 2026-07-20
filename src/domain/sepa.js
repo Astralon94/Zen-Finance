@@ -8,9 +8,9 @@
 //   executionDate: 'YYYY-MM-DD',           // data richiesta esecuzione
 //   batchBooking: bool,                    // true = addebito unico cumulativo
 //   now: Date,                             // opzionale (default new Date()) — per CreDtTm/MsgId
-//   debtor: { name, iban, cuc },           // ordinante (cuc solo per CBI con header)
-//   headerless: bool,                      // solo CBI: omette il GrpHdr (niente CUC) — per
-//                                          // portali che lo ricostruiscono (es. RelaxBanking BCC)
+//   debtor: { name, iban, cuc },           // ordinante; cuc solo per CBI — se vuoto viene
+//                                          // emesso il segnaposto NOTPROVIDED (GrpHdr e il
+//                                          // blocco CUC sono comunque obbligatori da XSD)
 //   transactions: [{ endToEndId, amount, creditorName, creditorIban, remittance }]
 // }
 //
@@ -125,10 +125,11 @@ function buildCbi(input, ctx) {
     ? tag('ReqdExctnDt', tag('Dt', input.executionDate))
     : tag('ReqdExctnDt', input.executionDate);
 
-  // headerless: flusso CBI SENZA GrpHdr (quindi senza CUC) — alcuni portali (es. RelaxBanking
-  // delle BCC) accettano flussi "sprovvisti dei TAG relativi all'header" e ricostruiscono
-  // mittente e contesto dal conto ordinante selezionato in fase di import.
-  const grpHdr = input.headerless ? '' :
+  // GrpHdr è SEMPRE obbligatorio da XSD CBI (il validatore delle banche lo pretende), così
+  // come InitgPty/Id (il CUC). Il CUC però è un Max35Text senza pattern: con CUC vuoto si
+  // emette il segnaposto NOTPROVIDED (fallback di sepaId) — schema-valido, e i portali che
+  // ricavano il mittente dal conto ordinante (es. RelaxBanking BCC) lo accettano.
+  const grpHdr =
     `<GrpHdr>${tag('MsgId', ctx.msgId)}${tag('CreDtTm', ctx.creDtTm)}${tag('NbOfTxs', nbOfTxs)}${tag('CtrlSum', ctrlSum)}` +
     `<InitgPty>${tag('Nm', dbtrName)}<Id><OrgId><Othr>${tag('Id', cuc)}${tag('Issr', 'CBI')}</Othr></OrgId></Id></InitgPty>` +
     `</GrpHdr>`;
