@@ -60,7 +60,7 @@ const cbi = generateSepaXml({
 ok('CBI: dichiarazione XML UTF-8', cbi.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
 ok('CBI: nessun BOM', cbi.charCodeAt(0) === 0x3c);
 ok('CBI: radice CBIPaymentRequest 00.04.01', cbi.includes('<CBIPaymentRequest xmlns="urn:CBI:xsd:CBIPaymentRequest.00.04.01">'));
-ok('CBI: PmtMtd TRA', cbi.includes('<PmtMtd>TRA</PmtMtd>'));
+ok('CBI: PmtMtd TRA', cbi.includes('<PmtMtd>TRF</PmtMtd>'));
 ok('CBI: BtchBookg true', cbi.includes('<BtchBookg>true</BtchBookg>'));
 ok('CBI: ReqdExctnDt con <Dt> nella 00.04.01', cbi.includes('<ReqdExctnDt><Dt>2026-07-21</Dt></ReqdExctnDt>'));
 ok('CBI: CUC in InitgPty con Issr CBI', cbi.includes('<Othr><Id>ABCD1234</Id><Issr>CBI</Issr></Othr>'));
@@ -114,6 +114,11 @@ ok('senza CUC: segnaposto NOTPROVIDED nel blocco CUC', cbiNoCuc.includes('<Othr>
 ok('senza CUC: PmtInf con tutte le transazioni', (cbiNoCuc.match(/<CdtTrfTxInf>/g) || []).length === 7);
 ok('senza CUC: genera senza errori', !throws(() => generateSepaXml({ format: 'cbi', now, executionDate: '2026-07-21', batchBooking: true, debtor: { name: 'X', iban: IBAN_ORD }, transactions: many })));
 ok('con CUC: valore reale nel GrpHdr', cbiMany.includes('<Othr><Id>ABCD1234</Id><Issr>CBI</Issr></Othr>'));
+
+
+// ---- regole RelaxBanking/CBI: PmtMtd TRF e PmtTpInf SEPA ----
+ok('CBI: PmtMtd è TRF (TRA rifiutato dai portali BCC)', cbiMany.includes('<PmtMtd>TRF</PmtMtd>') && !cbiMany.includes('<PmtMtd>TRA</PmtMtd>'));
+ok('CBI: PmtTpInf con SvcLvl SEPA presente', cbiMany.includes('<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>'));
 
 console.log(failed ? `\n${failed} test FALLITI` : '\nTutti i test passati');
 process.exit(failed ? 1 : 0);

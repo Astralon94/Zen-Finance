@@ -144,8 +144,12 @@ function buildCbi(input, ctx) {
     `</CdtTrfTxInf>`
   ).join('');
 
+  // PmtMtd: TRF (bonifico). RelaxBanking BCC rifiuta 'TRA' ("deve essere valorizzato solo con
+  // CHK in caso di Disposizione di pagamento Italia"): TRF è il valore sicuro per gli SCT.
+  // PmtTpInf con SvcLvl SEPA: obbligatorio per il portale quando l'IBAN beneficiario è IT.
   const pmtInf =
-    `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRA')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}${reqd}` +
+    `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRF')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}` +
+    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>${reqd}` +
     `<Dbtr>${tag('Nm', dbtrName)}</Dbtr>` +
     `<DbtrAcct><Id>${tag('IBAN', dbtrIban)}</Id></DbtrAcct>` +
     `<DbtrAgt><FinInstnId><ClrSysMmbId>${tag('MmbId', abi)}</ClrSysMmbId></FinInstnId></DbtrAgt>` +
@@ -176,6 +180,7 @@ function buildPain001(input, ctx) {
 
   const pmtInf =
     `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRF')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}` +
+    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>` +
     `${tag('ReqdExctnDt', input.executionDate)}` +
     `<Dbtr>${tag('Nm', dbtrName)}</Dbtr>` +
     `<DbtrAcct><Id>${tag('IBAN', dbtrIban)}</Id></DbtrAcct>` +
