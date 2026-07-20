@@ -137,6 +137,7 @@ function buildCbi(input, ctx) {
   const txXml = rows.map(r =>
     `<CdtTrfTxInf>` +
     `<PmtId>${tag('InstrId', r.instrId)}${tag('EndToEndId', r.endToEndId)}</PmtId>` +
+    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>` +
     `<Amt><InstdAmt Ccy="EUR">${r.amountStr}</InstdAmt></Amt>` +
     `<Cdtr>${tag('Nm', r.creditorName)}</Cdtr>` +
     `<CdtrAcct><Id>${tag('IBAN', r.creditorIban)}</Id></CdtrAcct>` +
@@ -146,10 +147,11 @@ function buildCbi(input, ctx) {
 
   // PmtMtd: TRF (bonifico). RelaxBanking BCC rifiuta 'TRA' ("deve essere valorizzato solo con
   // CHK in caso di Disposizione di pagamento Italia"): TRF è il valore sicuro per gli SCT.
-  // PmtTpInf con SvcLvl SEPA: obbligatorio per il portale quando l'IBAN beneficiario è IT.
+  // PmtTpInf con SvcLvl SEPA: obbligatorio per RelaxBanking con IBAN beneficiario IT, ma il
+  // suo controllo è PER DISPOSIZIONE: il blocco va dentro ogni CdtTrfTxInf (a livello PmtInf
+  // non viene riconosciuto — report errori distinta del 2026-07-20). Mai in entrambi i punti.
   const pmtInf =
-    `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRF')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}` +
-    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>${reqd}` +
+    `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRF')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}${reqd}` +
     `<Dbtr>${tag('Nm', dbtrName)}</Dbtr>` +
     `<DbtrAcct><Id>${tag('IBAN', dbtrIban)}</Id></DbtrAcct>` +
     `<DbtrAgt><FinInstnId><ClrSysMmbId>${tag('MmbId', abi)}</ClrSysMmbId></FinInstnId></DbtrAgt>` +
@@ -171,6 +173,7 @@ function buildPain001(input, ctx) {
   const txXml = rows.map(r =>
     `<CdtTrfTxInf>` +
     `<PmtId>${tag('EndToEndId', r.endToEndId)}</PmtId>` +
+    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>` +
     `<Amt><InstdAmt Ccy="EUR">${r.amountStr}</InstdAmt></Amt>` +
     `<Cdtr>${tag('Nm', r.creditorName)}</Cdtr>` +
     `<CdtrAcct><Id>${tag('IBAN', r.creditorIban)}</Id></CdtrAcct>` +
@@ -180,7 +183,6 @@ function buildPain001(input, ctx) {
 
   const pmtInf =
     `<PmtInf>${tag('PmtInfId', ctx.pmtInfId)}${tag('PmtMtd', 'TRF')}${tag('BtchBookg', input.batchBooking ? 'true' : 'false')}` +
-    `<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>` +
     `${tag('ReqdExctnDt', input.executionDate)}` +
     `<Dbtr>${tag('Nm', dbtrName)}</Dbtr>` +
     `<DbtrAcct><Id>${tag('IBAN', dbtrIban)}</Id></DbtrAcct>` +
