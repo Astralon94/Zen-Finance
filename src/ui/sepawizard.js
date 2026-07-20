@@ -81,7 +81,10 @@ export function openSepaWizard() {
     batchBooking: true,
     registerPayments: false
   };
-  sheet = openSheet('<div id="wiz"></div>', () => render());
+  // NB: assegnare `sheet` PRIMA di chiamare render(): render() usa la variabile di modulo,
+  // e dentro l'onMount di openSheet l'assegnazione non sarebbe ancora avvenuta.
+  sheet = openSheet('<div id="wiz"></div>');
+  render();
   // avvia il recupero IBAN dagli XML per i gruppi senza IBAN
   W.groups.filter(g => !g.iban).forEach(async g => {
     const ib = await prefillIbanFromXml(g);
