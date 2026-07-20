@@ -118,8 +118,9 @@ ok('con CUC: valore reale nel GrpHdr', cbiMany.includes('<Othr><Id>ABCD1234</Id>
 
 // ---- regole RelaxBanking/CBI: PmtMtd TRF e PmtTpInf SEPA ----
 ok('CBI: PmtMtd è TRF (TRA rifiutato dai portali BCC)', cbiMany.includes('<PmtMtd>TRF</PmtMtd>') && !cbiMany.includes('<PmtMtd>TRA</PmtMtd>'));
-ok('CBI: PmtTpInf SEPA dentro OGNI disposizione (controllo per-CdtTrfTxInf di RelaxBanking)', (cbiMany.match(/<PmtTpInf><SvcLvl><Cd>SEPA<\/Cd><\/SvcLvl><\/PmtTpInf>/g) || []).length === 7);
-ok('CBI: nessun PmtTpInf a livello PmtInf (mai in entrambi i punti)', !/<BtchBookg>[^<]*<\/BtchBookg><PmtTpInf>/.test(cbiMany));
+ok('CBI: PmtTpInf di distinta con InstrPrty NORM + SvcLvl SEPA (come esempio ufficiale CBI)', cbiMany.includes('<BtchBookg>true</BtchBookg><PmtTpInf><InstrPrty>NORM</InstrPrty><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>'));
+ok('CBI: CtgyPurp SUPP dentro OGNI disposizione (XSD non ammette SvcLvl/Cd nel CdtTrfTxInf)', (cbiMany.match(/<PmtTpInf><CtgyPurp><Cd>SUPP<\/Cd><\/CtgyPurp><\/PmtTpInf>/g) || []).length === 7);
+ok('CBI: nessun SvcLvl dentro le disposizioni', !/<EndToEndId>[^<]*<\/EndToEndId><\/PmtId><PmtTpInf><SvcLvl>/.test(cbiMany));
 
 console.log(failed ? `\n${failed} test FALLITI` : '\nTutti i test passati');
 process.exit(failed ? 1 : 0);
