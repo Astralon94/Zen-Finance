@@ -106,5 +106,15 @@ const many = Array.from({ length: 7 }, (_, i) => ({ amount: 0.1, creditorName: '
 const cbiMany = generateSepaXml({ format: 'cbi', now, executionDate: '2026-07-21', batchBooking: true, debtor: { name: 'X', iban: IBAN_ORD, cuc: 'ABCD1234' }, transactions: many });
 ok('quadratura: 7 × 0.10 = 0.70 esatto', cbiMany.includes('<CtrlSum>0.70</CtrlSum>') && cbiMany.includes('<NbOfTxs>7</NbOfTxs>'));
 
+
+// ---- CBI senza intestazione (headerless, es. RelaxBanking BCC) ----
+const cbiHdrless = generateSepaXml({ format: 'cbi', headerless: true, now, executionDate: '2026-07-21', batchBooking: true, debtor: { name: 'X', iban: IBAN_ORD }, transactions: many });
+ok('headerless: radice CBIPaymentRequest', cbiHdrless.includes('<CBIPaymentRequest xmlns="urn:CBI:xsd:CBIPaymentRequest.00.04.01">'));
+ok('headerless: nessun GrpHdr', !cbiHdrless.includes('<GrpHdr>'));
+ok('headerless: nessun CUC/Issr CBI', !cbiHdrless.includes('<Issr>CBI</Issr>'));
+ok('headerless: PmtInf presente con transazioni', cbiHdrless.includes('<PmtInf>') && (cbiHdrless.match(/<CdtTrfTxInf>/g) || []).length === 7);
+ok('headerless: genera senza CUC (non obbligatorio)', !throws(() => generateSepaXml({ format: 'cbi', headerless: true, now, executionDate: '2026-07-21', batchBooking: true, debtor: { name: 'X', iban: IBAN_ORD }, transactions: many })));
+ok('con header: GrpHdr presente', cbiMany.includes('<GrpHdr>'));
+
 console.log(failed ? `\n${failed} test FALLITI` : '\nTutti i test passati');
 process.exit(failed ? 1 : 0);

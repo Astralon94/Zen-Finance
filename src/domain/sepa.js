@@ -8,7 +8,9 @@
 //   executionDate: 'YYYY-MM-DD',           // data richiesta esecuzione
 //   batchBooking: bool,                    // true = addebito unico cumulativo
 //   now: Date,                             // opzionale (default new Date()) — per CreDtTm/MsgId
-//   debtor: { name, iban, cuc },           // ordinante (cuc solo per CBI)
+//   debtor: { name, iban, cuc },           // ordinante (cuc solo per CBI con header)
+//   headerless: bool,                      // solo CBI: omette il GrpHdr (niente CUC) — per
+//                                          // portali che lo ricostruiscono (es. RelaxBanking BCC)
 //   transactions: [{ endToEndId, amount, creditorName, creditorIban, remittance }]
 // }
 //
@@ -123,7 +125,10 @@ function buildCbi(input, ctx) {
     ? tag('ReqdExctnDt', tag('Dt', input.executionDate))
     : tag('ReqdExctnDt', input.executionDate);
 
-  const grpHdr =
+  // headerless: flusso CBI SENZA GrpHdr (quindi senza CUC) — alcuni portali (es. RelaxBanking
+  // delle BCC) accettano flussi "sprovvisti dei TAG relativi all'header" e ricostruiscono
+  // mittente e contesto dal conto ordinante selezionato in fase di import.
+  const grpHdr = input.headerless ? '' :
     `<GrpHdr>${tag('MsgId', ctx.msgId)}${tag('CreDtTm', ctx.creDtTm)}${tag('NbOfTxs', nbOfTxs)}${tag('CtrlSum', ctrlSum)}` +
     `<InitgPty>${tag('Nm', dbtrName)}<Id><OrgId><Othr>${tag('Id', cuc)}${tag('Issr', 'CBI')}</Othr></OrgId></Id></InitgPty>` +
     `</GrpHdr>`;
