@@ -1,99 +1,67 @@
-# Zen Finance — versione server (sperimentale)
+# Zen Finance
 
-App di contabilità **100% locale** (ex *Inconty* / *Credit Business*). Niente cloud,
-niente Fatture in Cloud, niente account.
+Contabilità aziendale **self-hosted e 100% locale**: movimenti, fatture passive con import delle fatture elettroniche italiane (FatturaPA), scadenziario, conto economico ed export dei bonifici SEPA/CBI. Niente cloud, niente abbonamenti: un server Node **senza dipendenze a runtime** e un database SQLite in un singolo file.
 
-> **Variante `-server`.** A differenza dell'originale (Vite + File System Access API,
-> solo Chrome), questa versione gira su un **server locale Node** (`node:http`) con un
-> **database relazionale `node:sqlite`** (zero dipendenze a runtime). Il frontend resta
-> la stessa SPA, ma persiste via API (`/api/data`) invece che su cartella del disco.
-> I dati vivono nel file `data/zenfinance.db`, con backup automatici in `data/backups/`.
+## Caratteristiche
 
-## Cosa fa
+- **Multi-azienda** — aziende con dati separati; conti (con fido ed esclusioni), categorie, fornitori e clienti.
+- **Movimenti** — uscite, entrate e trasferimenti; ricerca e filtri combinabili; descrizione bancaria grezza affiancata a un nome leggibile; regole di categorizzazione.
+- **Fatture passive** — import XML FatturaPA (singolo, massivo, `.p7m`, `.zip`) con deduplica; note di credito riconosciute e compensate; stato (da pagare / parziale / pagata / scaduta) **sempre derivato dai pagamenti, mai salvato**.
+- **Bonifici SEPA/CBI** — wizard che genera dalle fatture in pagamento il flusso XML per i bonifici massivi da caricare sull'home banking: tracciato **CBI** (`CBIPaymentRequest`, con o senza CUC) o **pain.001.001.03**, causale per fornitore o per fattura, validazione IBAN, saldo opzionale delle fatture esportate.
+- **Scadenziario** — movimenti programmati raggruppati per periodo, con le rate dei finanziamenti incluse automaticamente.
+- **F24, finanziamenti, carte** — sezioni dedicate per tributi, piani di ammortamento e carte di credito con addebito differito.
+- **Conto economico e dashboard** — ricavi, costi e utile per anno/mese; liquidità, scaduto e prossime scadenze a colpo d'occhio.
+- **Multi-utente** — login con permessi granulari per sezione e azione; registro attività.
+- **Export** — PDF, CSV, backup JSON completo, XML delle fatture.
+- **Aggiornamenti in-app** — l'app controlla le release di questo repository e si aggiorna da sola (vedi sotto).
 
-**Base multi-azienda**
-- Aziende, conti (con saldo, fido, esclusione da liquidità/P&L), categorie (anche "neutre"), fornitori/clienti.
-- Conto economico per anno/mese con ricavi, costi, utile e ripartizione per categoria.
-- Dashboard con liquidità, fatture da pagare, scaduto, utile dell'anno e prossime scadenze.
+## Requisiti
 
-**Movimenti**
-- Uscite, entrate, trasferimenti tra conti.
-- In lista è sempre visibile la **categoria** (emoji + nome), oltre a conto e data.
-- Ricerca testuale e filtri combinabili: tipo, conto, categoria, anno, mese.
-- Ogni movimento conserva la **descrizione grezza** della banca e può avere un **nome visualizzato** leggibile.
-- Flag **"In attesa di fattura"**: evidenzia un movimento (es. contanti pagati) la cui fattura arriverà dopo; resta evidenziato finché non viene abbinato.
+- **Node.js ≥ 22.5** (usa il modulo nativo `node:sqlite`; consigliata l'ultima LTS).
+- Nessuna dipendenza a runtime: `npm install` serve solo per lo sviluppo del frontend.
 
-**Fatture passive** (stato sempre **derivato** dai pagamenti, vedi sotto)
-- Filtri combinabili (fornitore, anno/mese per data documento, stato) con riepilogo aggregato live.
-- **Import XML**: singolo o massivo, file `.xml`, firmati `.p7m`, archivi `.zip`; dedup per P.IVA/CF + numero. Le **note di credito** (TipoDocumento TD04) vengono riconosciute automaticamente.
-- **Note di credito a favore**: trattate come fatture passive *in positivo*. Non risultano "da pagare"/scadute; nel riepilogo e in Dashboard **scalano** il dovuto netto al fornitore. Marcabili anche a mano dall'editor fattura.
-- Sotto-sezione **In pagamento** dentro Fatture: raggruppato per fornitore, con **saldo multiplo** (cumulativo o per fattura). Selezionando fatture + note di credito dello stesso fornitore, il movimento sul conto è il **netto** (fatture − note di credito): le fatture vanno a "pagata", le NDC a "usata".
+## Avvio rapido
 
-**F24** (sezione propria nel menù)
-- Elenco dei movimenti segnati come F24 (versamenti tributi) con periodo/riferimento, totali e filtro per anno. Il flag si imposta dall'editor del movimento.
+```bash
+git clone https://github.com/Astralon94/Zen-Finance.git
+cd Zen-Finance
+npm start            # avvia il server su http://localhost:4331
+```
 
-**Programmati** (scadenziario, sezione propria)
-- Movimenti futuri previsti, divisi in **Addebiti** e **Accrediti**, con data e flag **Manuale** evidenziato (es. affitto da pagare a mano).
-- **Raggruppati per periodo** (Scadute, Oggi, Questa settimana, Settimana prossima, Questo mese, Più avanti) con subtotale per gruppo.
-- Include automaticamente anche le **rate dei finanziamenti** (badge "finanz."): scadenziario unico.
-- Completamento: **crea il movimento reale**, **abbina a un movimento già presente** oppure **segna solo completato**. Riapribile.
+Al primo avvio viene creato l'utente **admin / admin**: cambiare subito la password (Impostazioni → Utenti). La porta si cambia con `PORT=8080 npm start`.
 
-**Finanziamenti** (sezione propria)
-- Schede per mutui, prestiti, leasing: ente/banca, debito totale, date inizio/scadenza, collegate a **azienda** e **conto**.
-- **Piano rate** generabile oppure inserito/modificato a mano rata per rata (importi e date non omogenei).
-- Tracciamento rate: paga creando il movimento, abbinando un movimento esistente o segnando solo pagata; residuo, pagato, prossima rata e rate scadute evidenziate.
-- *(Allegati alle rateizzazioni: in arrivo nella versione server — BLOB nel DB.)*
+I dati vivono in `data/zenfinance.db` (creato al primo avvio, con backup automatici in `data/backups/`): la cartella `data/` non è mai versionata e non viene mai toccata dagli aggiornamenti.
 
-**Banca**
-- **Import estratto conto**: XML bancario **CBI/camt** e `.xls/.xlsx/.csv/.tsv` con auto-rilevamento colonne e anteprima di mappatura. Dedup e conto di destinazione.
-- **Riconciliazione**: abbina le uscite alle fatture con conferma manuale, anche **un movimento ↔ più fatture**.
-- **Regole** di categorizzazione automatica da parola chiave; applicate all'import e riapplicabili. Creabili al volo con **"Crea regola da questo movimento"**.
+> **Nota di sicurezza** — l'app è pensata per uso locale o su rete privata. Se esposta a Internet, va protetta con un livello di autenticazione aggiuntivo (VPN o reverse proxy con access control).
 
-**Altro**: tema chiaro/scuro, **backup/ripristino JSON** dalle Impostazioni.
+## Aggiornamenti
+
+L'app controlla all'avvio (e ogni 12 ore, o con "Controlla ora" in Impostazioni) il manifest dell'ultima [release](https://github.com/Astralon94/Zen-Finance/releases) di questo repository, scarica il pacchetto, salva una copia dei file sovrascritti in `data/updates-backup/` e si riavvia sul nuovo codice. La variabile `ZEN_UPDATE_URL` permette di puntare a un altro manifest, oppure — se vuota — di disattivare gli aggiornamenti.
 
 ## Architettura
 
-Server Node (zero dipendenze a runtime) + SPA. Il frontend resta modulare in `src/`,
-buildato con Vite in un **`index.html` self-contained** servito dal server da `public/`.
-
 ```
-server.js          server node:http — statico da public/ + API /api
-server/
-  schema.js        specifica tabelle (colonne indicizzate + doc JSON verbatim)
-  db.js            connessione node:sqlite, WAL + foreign_keys, DDL, backup
-  serialize.js     import/export DB ⇄ modello app (transazionale, lossless)
-scripts/           reset.mjs, roundtrip.mjs (test d'integrità)
-src/               frontend (invariato salvo state/store.js → API)
-  state/     model.js (dati+migrazioni), store.js (persistenza via /api/data)
-  domain/    util, finance, invoices, rules, reconcile, scheduled, loans
-  importers/ fatturapa, p7m, index (xml/p7m/zip), commit, bankxls, bankxml
-  ui/        app.js (shell+router), views/ (dashboard, movimenti, fatture, …)
-data/              zenfinance.db (+ backups/) — NON versionato
+server.js          server node:http — statici da public/ + API /api
+server/            schema, DB (node:sqlite, WAL), serializzazione/changeset, auth, updater
+src/               frontend (Vite): state/, domain/, ui/ (viste)
+public/index.html  SPA buildata, self-contained: è ciò che il server serve
+scripts/           utilità: reset DB, reset admin, test round-trip, build pacchetto update
+tests/             test (node --test)
+data/              database + backup — locale, mai versionato
 ```
 
-## Persistenza e integrità
-Fonte di verità: il **DB SQLite** del server. Modello **ibrido documento-relazionale**:
-ogni entità ha colonne tipizzate/indicizzate per le query **più** una colonna `doc` con il
-JSON verbatim → l'export ricostruito dal `doc` è **lossless per costruzione**. `WAL` +
-`foreign_keys`, import **transazionale all-or-nothing** con **backup del DB prima**,
-contatore `rev` **monotòno** (non torna mai indietro).
+Principi: il documento JSON di ogni record è la **fonte di verità** (colonne SQL solo per query/indici); il frontend invia **changeset granulari** (`POST /api/changes`) con guardia di concorrenza; i valori derivati (stati, totali) **non vengono mai salvati**.
 
-## Stato fatture (anti cambi involontari)
-Si memorizzano **solo fatti**: `total`, `withholding`, `payments[]`. Lo stato
-(`da pagare` / `parziale` / `pagata` / `scaduta`) e il residuo sono **calcolati**, mai salvati.
+## Sviluppo
 
-## Comandi
 ```bash
-npm install          # dipendenze SOLO di build (vite, xlsx, fflate)
-npm run build        # builda il frontend → public/index.html
-npm start            # avvia il server → http://localhost:4331
-npm run reset-db     # riporta il DB ai dati di default (con backup)
-npm run test:roundtrip  # test d'integrità import/export (in memoria)
+npm install          # dipendenze di build (Vite)
+npm run dev          # frontend in sviluppo
+npm run build        # build → public/index.html
+node --test tests/   # test
+npm run test:roundtrip
 ```
 
-## Uso
-1. `npm install && npm run build` (la prima volta, e dopo ogni modifica al frontend)
-2. `npm start` → apri **http://localhost:4331**
+## Famiglia Zen
 
-Backup/trasferimento dati: Impostazioni → *Esporta backup* / *Importa backup* (JSON),
-compatibile con l'export dell'app originale.
+Zen Finance fa parte di una piccola famiglia di app self-hosted con la stessa architettura: [Zen Human](https://github.com/Astralon94/Zen-Human) (presenze e turni del personale) e [Zen Warehouse](https://github.com/Astralon94/Zen-Warehouse) (ordini fornitori e magazzino).
