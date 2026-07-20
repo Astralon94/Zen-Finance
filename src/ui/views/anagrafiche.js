@@ -153,7 +153,8 @@ function editCompany(id) {
   openSheet(`<h2>${id ? 'Modifica azienda' : 'Nuova azienda'}</h2>
     <div class="frow"><div class="field" style="flex:0 0 80px"><label>Emoji</label><input id="c_em" value="${esc(c?.emoji || '🏢')}"></div>
       <div class="field"><label>Nome</label><input id="c_nm" value="${esc(c?.name || '')}"></div></div>
-    <div class="field"><label>P.IVA</label><input id="c_pi" value="${esc(c?.piva || '')}"></div>
+    <div class="frow"><div class="field"><label>P.IVA</label><input id="c_pi" value="${esc(c?.piva || '')}"></div>
+      <div class="field"><label>CUC <span class="muted" style="font-weight:400">(bonifici CBI · 8 car.)</span></label><input id="c_cuc" value="${esc(c?.cuc || '')}" maxlength="35" placeholder="es. ABCD1234"></div></div>
     <div class="field"><label>Note</label><input id="c_no" value="${esc(c?.note || '')}"></div>
     <div class="actions">${wDel ? '<button class="btn danger" data-del>Elimina</button>' : ''}<button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>${w ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`,
     sheet => {
@@ -161,7 +162,7 @@ function editCompany(id) {
       sheet.querySelector('[data-cancel]').onclick = closeSheet;
       sheet.querySelector('[data-save]')?.addEventListener('click', () => {
         const name = g('#c_nm'); if (!name) { toast('Inserisci il nome'); return; }
-        const rec = { name, emoji: g('#c_em') || '🏢', piva: g('#c_pi'), note: g('#c_no') };
+        const rec = { name, emoji: g('#c_em') || '🏢', piva: g('#c_pi'), cuc: g('#c_cuc').toUpperCase(), note: g('#c_no') };
         if (id) Object.assign(c, rec); else data.companies.push({ id: uid(), color: '#545ea6', ...rec });
         save(); closeSheet(); toast('Salvato ✓');
       });
@@ -192,6 +193,7 @@ function editAccount(id) {
       <div class="field"><label>Azienda</label><select id="a_co">${companyOptions(cid)}</select></div></div>
     <div class="frow" id="row_init"><div class="field"><label>Saldo iniziale</label><input id="a_in" inputmode="decimal" value="${a ? String(a.initial || 0).replace('.', ',') : '0'}"></div>
       <div class="field" id="fld_fido"><label>Fido / scoperto</label><input id="a_fi" inputmode="decimal" value="${a?.fido ? String(a.fido).replace('.', ',') : ''}"></div></div>
+    <div class="field" id="row_iban"><label>IBAN <span class="muted" style="font-weight:400">(ordinante dei bonifici SEPA)</span></label><input id="a_iban" value="${esc(a?.iban || '')}" placeholder="IT.."></div>
     <div class="field" id="row_link"><label>Conto collegato (addebito estratto conto)</label><select id="a_link">${linkOpts}</select></div>
     <div class="field" id="row_excl"><label><input type="checkbox" id="a_ex" ${a?.excluded ? 'checked' : ''}> Escludi da liquidità e conto economico</label></div>
     <div class="muted" id="row_hint" style="font-size:12px;margin:-2px 2px 8px"></div>
@@ -208,6 +210,7 @@ function editAccount(id) {
         const k = g('#a_kind').value;
         g('#row_init').style.display = (k === 'cash') ? 'none' : '';
         g('#fld_fido').style.display = (k === 'standard' || k === 'prepaid') ? '' : 'none';
+        g('#row_iban').style.display = (k === 'standard' || k === 'prepaid') ? '' : 'none';
         g('#row_link').style.display = (k === 'credit') ? '' : 'none';
         g('#row_excl').style.display = (k === 'standard' || k === 'prepaid') ? '' : 'none';
         g('#row_hint').textContent = HINTS[k] || '';
@@ -223,6 +226,7 @@ function editAccount(id) {
           name, emoji: g('#a_em').value.trim() || kindEmoji(kind), companyId: g('#a_co').value, kind,
           initial: kind === 'cash' ? 0 : parseSigned(g('#a_in').value),
           fido: liquidityKind ? (parseAmount(g('#a_fi').value) || 0) : 0,
+          iban: liquidityKind ? g('#a_iban').value.replace(/\s+/g, '').toUpperCase() : '',
           excluded: liquidityKind ? g('#a_ex').checked : false,
           linkedAccountId: kind === 'credit' ? (g('#a_link').value || null) : null
         };

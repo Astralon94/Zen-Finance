@@ -25,6 +25,13 @@ export function fmtDate(d) {
   if (!g) return d;
   return `${parseInt(g)} ${MESI[parseInt(m) - 1].slice(0, 3).toLowerCase()}`;
 }
+// "2026-05-30" -> "30 maggio 2026" (per bonifici/causali)
+export function fmtDateLong(d) {
+  if (!d) return '';
+  const [y, m, g] = d.split('-');
+  if (!g) return d;
+  return `${parseInt(g)} ${MESI[parseInt(m) - 1].toLowerCase()} ${y}`;
+}
 // "2026-06-23" -> "23/06/2026"
 export function fmtDateFull(d) {
   if (!d) return '';

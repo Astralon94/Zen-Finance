@@ -11,7 +11,9 @@ export const DEFAULT_DATA = () => ({
   rev: 0,                 // contatore monotòno: difende dagli overwrite con copie stale
   savedAt: 0,
   settings: { theme: 'auto', currency: 'EUR', activeCompany: null },
+  // aziende: {id,name,emoji,color,piva,note,cuc} — cuc = Codice Univoco Cliente (8 alfanumerici) per l'export bonifici CBI
   companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#545ea6', piva: '', note: '' }],
+  // conti: {id,companyId,name,emoji,initial,kind,excluded,fido,linkedAccountId,iban} — iban dell'ordinante per i bonifici SEPA
   accounts: [{ id: 'acc1', companyId: 'co1', name: 'Conto corrente', emoji: '🏦', initial: 0, kind: 'standard', excluded: false, fido: 0 }],
   categories: defaultCategories(),
   suppliers: [],          // {id,name,type:'supplier'|'client'|'both',piva,cf,iban,email,note}

@@ -1,10 +1,12 @@
 // ============ Vista "In pagamento" — raggruppata per fornitore + saldo multiplo ============
 import { data } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, fmt, fmtDate, todayStr, round2 } from '../../domain/util.js';
 import { activeCompany, sup, co, acc, txLabel } from '../../domain/finance.js';
 import { invoicesInScope, invResiduo, invSignedResiduo, isCreditNote, invOverdue, isToPay, supNameOf, setToPay, applyBatch } from '../../domain/invoices.js';
 import { reconcileMany, batchCandidates, searchFreeMovements } from '../../domain/reconcile.js';
 import { openSheet, closeSheet, toast } from '../dom.js';
+import { openSepaWizard } from '../sepawizard.js';
 import { accountOptions } from '../forms.js';
 import { mountPicker } from '../matchpicker.js';
 import { openInvoice } from './fatture.js';
@@ -30,7 +32,9 @@ export function renderBody() {
   const gs = groups();
   const totAll = round2(gs.reduce((s, g) => s + g.invoices.reduce((a, i) => a + invSignedResiduo(i), 0), 0));
 
-  let h = `<div class="muted" style="margin:2px 2px 12px;font-size:13px">${gs.length} fornitor${gs.length === 1 ? 'e' : 'i'} · totale ${fmt(totAll)}</div>`;
+  const exportBtn = (gs.length && can('fatture.esporta')) ? `<button class="btn sm" data-sepa title="Esporta bonifici SEPA">🏦 Esporta bonifici</button>` : '';
+  let h = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 12px">
+      <span class="muted" style="font-size:13px">${gs.length} fornitor${gs.length === 1 ? 'e' : 'i'} · totale ${fmt(totAll)}</span>${exportBtn}</div>`;
   if (!gs.length) {
     h += `<div class="card empty">Nessuna fattura in pagamento.<br><span class="muted">Marca le fatture con ★ dalla sezione Fatture per pianificarne il saldo.</span></div>`;
     return h;
@@ -75,6 +79,7 @@ export function bindBody(root, rerender) {
   root.querySelectorAll('[data-open]').forEach(el => el.onclick = () => openInvoice(el.dataset.open));
   root.querySelectorAll('[data-unflag]').forEach(b => b.onclick = () => { const i = data.invoices.find(x => x.id === b.dataset.unflag); if (i) { setToPay(i, false); toast('Tolta da In pagamento'); } });
   root.querySelectorAll('[data-settle]').forEach(b => b.onclick = () => openSettle(b.dataset.settle));
+  root.querySelector('[data-sepa]')?.addEventListener('click', () => openSepaWizard());
 }
 
 function openSettle(groupKey) {
