@@ -33,7 +33,7 @@ Aggiungi questo blocco al file di configurazione:
   "mcpServers": {
     "zen-finance": {
       "command": "node",
-      "args": ["/Users/fmdesantis/Zen-Manager-Apps/Zen-Finance/mcp/server.mjs"]
+      "args": ["/percorso/assoluto/di/Zen-Manager-Apps/Zen-Finance/mcp/server.mjs"]
     }
   }
 }

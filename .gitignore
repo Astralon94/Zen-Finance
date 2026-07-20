@@ -24,3 +24,7 @@ yarn-error.log*
 
 # macOS
 .DS_Store
+
+# File locali di Claude Code (tooling personale, non versionato)
+CLAUDE.md
+.claude/
