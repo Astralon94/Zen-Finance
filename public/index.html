@@ -79,6 +79,7 @@
         <button class="chip ${xe.format==="cbi"?"on":""}" data-f="cbi">CBI (consigliato)</button>
         <button class="chip ${xe.format==="pain001"?"on":""}" data-f="pain001">pain.001</button>
       </div>
+      ${xe.format==="pain001"?'<div class="muted" style="font-size:11.5px;color:var(--neg)">⚠️ Molte banche italiane (BCC incluse) accettano SOLO il tracciato CBI e rifiutano il pain.001 ("formato flusso sconosciuto"). Usa pain.001 solo se la tua banca lo supporta esplicitamente.</div>':""}
     </div>`,xe.format==="cbi"&&(s+=`<div class="frow">
       <div class="field"><label>CUC <span class="muted" style="font-weight:400">(obbligatorio per CBI)</span></label><input id="w_cuc" value="${I(xe.cuc)}" placeholder="es. ABCD1234"></div>
       <div class="field"><label>Tracciato</label><select id="w_ver"><option value="00.04.01" ${xe.cbiVersion==="00.04.01"?"selected":""}>CBI 00.04.01</option><option value="00.04.00" ${xe.cbiVersion==="00.04.00"?"selected":""}>CBI 00.04.00</option></select></div>

@@ -237,6 +237,7 @@ function renderStep2() {
         <button class="chip ${W.format === 'cbi' ? 'on' : ''}" data-f="cbi">CBI (consigliato)</button>
         <button class="chip ${W.format === 'pain001' ? 'on' : ''}" data-f="pain001">pain.001</button>
       </div>
+      ${W.format === 'pain001' ? '<div class="muted" style="font-size:11.5px;color:var(--neg)">⚠️ Molte banche italiane (BCC incluse) accettano SOLO il tracciato CBI e rifiutano il pain.001 ("formato flusso sconosciuto"). Usa pain.001 solo se la tua banca lo supporta esplicitamente.</div>' : ''}
     </div>`;
   if (W.format === 'cbi') {
     h += `<div class="frow">
