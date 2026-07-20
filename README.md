@@ -62,6 +62,10 @@ node --test tests/   # test
 npm run test:roundtrip
 ```
 
+## Licenza
+
+Rilasciato sotto licenza [MIT](LICENSE).
+
 ## Famiglia Zen
 
 Zen Finance fa parte di una piccola famiglia di app self-hosted con la stessa architettura: [Zen Human](https://github.com/Astralon94/Zen-Human) (presenze e turni del personale) e [Zen Warehouse](https://github.com/Astralon94/Zen-Warehouse) (ordini fornitori e magazzino).
