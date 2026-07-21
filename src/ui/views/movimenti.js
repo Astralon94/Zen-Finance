@@ -7,7 +7,7 @@ import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
 import { exportTable, scopeLabel, nowStamp } from '../pdf.js';
 import { companyOptions, accountOptions, categoryOptions, supplierPicker, bindCombos } from '../forms.js';
 import { applyRules, suggestKeyword, reapplyAll } from '../../domain/rules.js';
-import { readMatrix, detect, buildRows, commitBankRows } from '../../importers/bankxls.js';
+import { readMatrix, detect, buildRows, commitBankRows, previewBankImport } from '../../importers/bankxls.js';
 import { registerImport } from '../importundo.js';
 import { parseBankXml, looksLikeBankXml } from '../../importers/bankxml.js';
 import { candidates, reconcileMany, ignoreRecon, searchInvoices } from '../../domain/reconcile.js';
@@ -277,6 +277,42 @@ async function processBankQueue(files, i) {
   } catch (e) { toast('Errore lettura ' + f.name + ': ' + e.message); next(); }
 }
 
+// ---- anteprima abbinamento import: conteggi + elenco righe abbinate (disattivabili) ----
+// Distingue nuovi / abbinati / duplicati. Le righe abbinate (🔗) riusano un movimento già presente
+// (es. bonifici del wizard "Registra i pagamenti"): deselezionandole si forza la creazione come nuovo.
+function bankMatchBlock(plan) {
+  let h = `<div class="muted" style="font-size:12px;margin:6px 2px">${plan.added} nuov${plan.added === 1 ? 'o' : 'i'} · ${plan.matched} abbinat${plan.matched === 1 ? 'o' : 'i'} · ${plan.skipped} duplicat${plan.skipped === 1 ? 'o' : 'i'}</div>`;
+  const matched = plan.entries.filter(e => e.status === 'matched');
+  if (matched.length) {
+    h += `<div class="section-title">Movimenti già presenti (abbinati)</div>
+      <div class="list" style="max-height:24vh;overflow:auto">`;
+    matched.forEach(e => {
+      const m = e.match;
+      const tot = m.kind === 'single' ? m.tx.amount : m.group.reduce((s, t) => s + t.amount, 0);
+      const note = m.kind === 'single' ? (m.tx.note || m.tx.desc || '(movimento)') : `${m.group.length} bonifici · addebito unico`;
+      h += `<div class="row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">
+          <input type="checkbox" data-mrow="${e.i}" checked style="width:16px;height:16px">
+          <span style="min-width:0">🔗 <span class="t2">${esc(note)}</span></span>
+        </label>
+        <div class="amt neg tnum">${fmt(tot)}</div></div>`;
+    });
+    h += `</div><div class="muted" style="font-size:11px;margin:2px">Deseleziona una riga per importarla come nuovo movimento.</div>`;
+  }
+  return h;
+}
+// indici di riga con abbinamento disattivato (checkbox deselezionate)
+function collectForceNew(sheet) {
+  return new Set([...sheet.querySelectorAll('[data-mrow]')].filter(c => !c.checked).map(c => +c.dataset.mrow));
+}
+// messaggio di esito coerente col conteggio nuovi/abbinati/duplicati
+function importMsg(r) {
+  const p = [`${r.added} nuov${r.added === 1 ? 'o' : 'i'}`];
+  if (r.matched) p.push(`${r.matched} abbinat${r.matched === 1 ? 'o' : 'i'}`);
+  if (r.skipped) p.push(`${r.skipped} duplicat${r.skipped === 1 ? 'o' : 'i'}`);
+  return 'Import: ' + p.join(' · ');
+}
+
 // anteprima per XML bancario (nessuna mappatura: dati già strutturati)
 // fileName/label/next servono all'import multiplo (coda): "Salta" o "Importa" passano al file successivo.
 function openBankPreview(rows, iban, fileName = '', label = '', next = () => {}) {
@@ -291,15 +327,20 @@ function openBankPreview(rows, iban, fileName = '', label = '', next = () => {})
     <div style="max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
       <table class="tbl"><thead><tr><th>Data</th><th>Descrizione</th><th class="r">Importo</th></tr></thead><tbody>${body}</tbody></table>
     </div>
+    <div id="bx_match"></div>
     <div class="actions"><button class="btn" data-cancel>${queued ? 'Salta' : 'Annulla'}</button><button class="btn primary" data-import>Importa ${rows.length}</button></div>`,
     sheet => {
+      const renderMatch = () => { sheet.querySelector('#bx_match').innerHTML = bankMatchBlock(previewBankImport(rows, sheet.querySelector('#bx_acc').value)); };
+      sheet.querySelector('#bx_acc').onchange = renderMatch;
+      renderMatch();
       sheet.querySelector('[data-cancel]').onclick = () => { closeSheet(); next(); };
       sheet.querySelector('[data-import]').onclick = () => {
         const accId = sheet.querySelector('#bx_acc').value;
+        const forceNew = collectForceNew(sheet);
         closeSheet();
         filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
-        const r = commitBankRows(rows, accId);
-        if (r.added) { registerImport(r.undo); if (r.skipped) toast(`${r.skipped} duplicati ignorati`); }
+        const r = commitBankRows(rows, accId, { forceNew });
+        if (r.added || r.matched) { registerImport(r.undo); toast(importMsg(r)); }
         else toast('Nessun movimento importato');
         next();
       };
@@ -337,6 +378,7 @@ function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
     <div class="field"><label><input type="checkbox" id="bk_inv"> Inverti il segno degli importi</label></div>
     <div class="section-title">Anteprima</div>
     <div id="bk_preview" style="max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    <div id="bk_match"></div>
     <div class="actions"><button class="btn" data-cancel>${queued ? 'Salta' : 'Annulla'}</button><button class="btn primary" data-import>Importa</button></div>`;
 
   openSheet(html, sheet => {
@@ -360,7 +402,9 @@ function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
       const body = rows.slice(0, 6).map(r => `<tr><td>${fmtDateFull(r.date)}</td><td>${esc(r.desc.slice(0, 40))}</td><td class="r tnum ${r.amount < 0 ? 'neg' : 'pos'}">${fmt(r.amount)}</td></tr>`).join('');
       g('#bk_preview').innerHTML = head + body + `</tbody></table><div class="muted" style="padding:8px 10px;font-size:12px">${rows.length} righe rilevate</div>`;
       sheet._rows = rows;
+      g('#bk_match').innerHTML = rows.length ? bankMatchBlock(previewBankImport(rows, g('#bk_acc').value)) : '';
     };
+    g('#bk_acc').onchange = preview;
     g('#bk_date').onchange = () => { m.dateCol = +g('#bk_date').value; preview(); };
     g('#bk_desc').onchange = () => { m.descCol = +g('#bk_desc').value; preview(); };
     g('#bk_inv').onchange = () => { m.invert = g('#bk_inv').checked; preview(); };
@@ -371,10 +415,11 @@ function openMappingSheet(matrix, fileName = '', label = '', next = () => {}) {
       const rows = sheet._rows || buildRows(matrix, m);
       if (!rows.length) { toast('Nessuna riga da importare'); return; }
       const accId = g('#bk_acc').value;
+      const forceNew = collectForceNew(sheet);
       closeSheet();
       filterType = 'all'; fState = 'todo'; // atterra sul filtro "Da gestire"
-      const r = commitBankRows(rows, accId);
-      if (r.added) { registerImport(r.undo); if (r.skipped) toast(`${r.skipped} duplicati ignorati`); }
+      const r = commitBankRows(rows, accId, { forceNew });
+      if (r.added || r.matched) { registerImport(r.undo); toast(importMsg(r)); }
       else toast('Nessun movimento importato');
       next();
     };

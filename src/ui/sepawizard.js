@@ -366,9 +366,12 @@ function doGenerate(txs) {
   if (W.registerPayments) {
     // registra i pagamenti sui gruppi effettivamente inclusi nel file
     const paidKeys = new Set(txs.map(t => t.group.key));
+    // marca i movimenti con l'origine del file bonifici: l'import estratto conto li riabbina
+    // invece di duplicarli. booking='batch' se la banca addebita un'unica riga cumulativa.
+    const sepa = { fileId: uid(), booking: W.batchBooking ? 'batch' : 'single' };
     W.groups.filter(g => g.selected && paidKeys.has(g.key)).forEach(g => {
-      if (g.mode === 'unico') applyBatch([...g.invs, ...g.ndc], { date: W.execDate, accountId: W.accountId, mode: 'cumulative' });
-      else batchSettle(g.invs, { date: W.execDate, accountId: W.accountId, mode: 'separate' });
+      if (g.mode === 'unico') applyBatch([...g.invs, ...g.ndc], { date: W.execDate, accountId: W.accountId, mode: 'cumulative', sepa });
+      else batchSettle(g.invs, { date: W.execDate, accountId: W.accountId, mode: 'separate', sepa });
     });
     toast(`File generato · pagamenti registrati ✓`);
   } else {

@@ -95,7 +95,13 @@ function askUndo() {
   }
   const n = current.count, noun = current.noun;
   let body = `Verranno rimoss${present === 1 ? 'o' : 'i'} ${present} record importat${present === 1 ? 'o' : 'i'} su ${coName(current.companyId)}`;
-  if (current.restores.length) body += `, ripristinando ${current.restores.length} anagrafic${current.restores.length === 1 ? 'a' : 'he'} arricchit${current.restores.length === 1 ? 'a' : 'e'}`;
+  if (current.restores.length) {
+    const r = current.restores.length;
+    // import estratto conto: i restore sono movimenti già presenti riabbinati; altrimenti anagrafiche arricchite
+    body += current.type === 'bank'
+      ? `, ripristinando ${r} moviment${r === 1 ? 'o' : 'i'} abbinat${r === 1 ? 'o' : 'i'}`
+      : `, ripristinando ${r} anagrafic${r === 1 ? 'a' : 'he'} arricchit${r === 1 ? 'a' : 'e'}`;
+  }
   body += '.';
   if (gone) body += ` ${gone} risultano già eliminati.`;
   if (modified) body += ` Attenzione: ${modified} sono stati modificati a mano dopo l'import e verranno comunque rimossi.`;

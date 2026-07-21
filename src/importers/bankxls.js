@@ -4,6 +4,8 @@ import { data, save } from '../state/store.js';
 import { uid, round2, pad2 } from '../domain/util.js';
 import { acc } from '../domain/finance.js';
 import { applyRules } from '../domain/rules.js';
+import { isTxReconciled } from '../domain/invoices.js';
+import { planBankImport } from '../domain/importmatch.js';
 
 // --- lettura file → matrice di valori grezzi ---
 // IMPORTANTE: molte banche esportano ".xls" che in realtà sono file di testo (TSV/CSV).
@@ -165,50 +167,61 @@ export function buildRows(matrix, map) {
   return out;
 }
 
-// --- commit nello store ---
-// Dedup robusto:
-//  • se la riga ha un riferimento univoco della banca (ref, da XML) → chiave = ref:conto:ref
-//    (stabile al re-import, niente falsi duplicati né perdite).
-//  • altrimenti (XLS/CSV) → impronta su conto+data+importo+descrizione, con CONTATORE
-//    progressivo: due righe identiche nello stesso file ricevono chiavi distinte (#0,#1…),
-//    così le commissioni ripetute non vengono erroneamente collassate, ma il re-import
-//    dello stesso file resta riconosciuto come duplicato.
-export function commitBankRows(rows, accountId) {
+// --- pianificazione store-aware (per l'anteprima) ---
+// Classifica le righe (nuove/abbinate/duplicate) contro lo stato attuale, senza scrivere nulla.
+// `forceNew` = indici di riga per cui l'utente ha disattivato l'abbinamento.
+export function previewBankImport(rows, accountId, forceNew = new Set()) {
   const a = acc(accountId);
-  if (!a) return { added: 0, skipped: 0, undo: null };
+  if (!a) return { entries: [], added: 0, matched: 0, skipped: 0 };
+  const existingKeys = new Set(data.transactions.filter(t => t.impHash).map(t => t.impHash));
+  return planBankImport(rows, accountId, data.transactions, { isReconciled: t => isTxReconciled(t.id), existingKeys, forceNew });
+}
+
+// --- commit nello store ---
+// Dedup robusto (vedi rowKey in domain/importmatch.js): riferimento univoco della banca oppure
+// impronta conto+data+importo+descrizione con contatore progressivo.
+// Oltre a creare i movimenti nuovi, ABBINA quelli già presenti compatibili (es. bonifici registrati
+// dal wizard "Registra i pagamenti"): li marca come importati riusando lo stesso movimento, così il
+// bonifico non rientra duplicato. I collegamenti fattura (pay.txId) restano intatti.
+export function commitBankRows(rows, accountId, { forceNew = new Set() } = {}) {
+  const a = acc(accountId);
+  if (!a) return { added: 0, matched: 0, skipped: 0, undo: null };
   const companyId = a.companyId;
-  const existing = new Set(data.transactions.filter(t => t.impHash).map(t => t.impHash));
-  const counter = new Map();
-  const createdTxIds = []; // per l'undo di sessione (vedi src/ui/importundo.js)
-  let added = 0, skipped = 0;
-  rows.forEach(row => {
-    let key;
-    if (row.ref) {
-      key = `ref:${accountId}:${row.ref}`;
-    } else {
-      const base = `${accountId}|${row.date}|${row.amount}|${(row.desc || '').toLowerCase().replace(/\s+/g, ' ').slice(0, 60)}`;
-      const n = counter.get(base) || 0; counter.set(base, n + 1);
-      key = `${base}#${n}`;
+  const existingKeys = new Set(data.transactions.filter(t => t.impHash).map(t => t.impHash));
+  const plan = planBankImport(rows, accountId, data.transactions, { isReconciled: t => isTxReconciled(t.id), existingKeys, forceNew });
+  const createdTxIds = []; // movimenti CREATI → rimossi in undo (vedi src/ui/importundo.js)
+  const restores = [];     // movimenti ASSORBITI → doc verbatim pre-import, ripristinato in undo
+  let added = 0, matched = 0, skipped = 0;
+  plan.entries.forEach(e => {
+    if (e.status === 'duplicate') { skipped++; return; }
+    if (e.status === 'matched') {
+      // assorbi il movimento (o l'intero gruppo di lotto) senza crearne uno nuovo
+      const members = e.match.kind === 'single' ? [e.match.tx] : e.match.group;
+      members.forEach(tx => {
+        restores.push({ key: 'transactions', doc: JSON.parse(JSON.stringify(tx)) });
+        tx.imported = true; tx.impHash = e.key; tx.impRef = e.row.ref || tx.impRef || null;
+        tx.desc = e.row.desc;   // descrizione banca (l'estratto è la fonte di verità)
+        tx.date = e.row.date;   // allinea la data alla cassa reale
+      });
+      matched++;
+      return;
     }
-    if (existing.has(key)) { skipped++; return; }
+    const row = e.row;
     const t = {
       id: uid(), companyId, type: row.amount < 0 ? 'expense' : 'income', amount: round2(Math.abs(row.amount)),
       categoryId: null, accountId, toAccountId: null, supplierId: null, date: row.date,
-      desc: row.desc, note: '', imported: true, impHash: key, impRef: row.ref || null, createdAt: Date.now()
+      desc: row.desc, note: '', imported: true, impHash: e.key, impRef: row.ref || null, createdAt: Date.now()
     };
     applyRules(t, { onlyEmpty: true });
     data.transactions.push(t);
     createdTxIds.push(t.id);
-    existing.add(key);
     added++;
   });
-  if (added) save();
-  // L'import estratto conto crea SOLO movimenti (nessun record esistente modificato):
-  // l'undo si limita a rimuovere gli id creati.
-  const undo = added ? {
-    type: 'bank', companyId, permission: 'movimenti.importa', count: added, noun: 'movimento',
+  if (added || matched) save();
+  const undo = (added || matched) ? {
+    type: 'bank', companyId, permission: 'movimenti.importa', count: added + matched, noun: 'movimento',
     creates: createdTxIds.map(id => ({ key: 'transactions', id })),
-    restores: [], attachments: [],
+    restores, attachments: [],
   } : null;
-  return { added, skipped, undo };
+  return { added, matched, skipped, undo };
 }

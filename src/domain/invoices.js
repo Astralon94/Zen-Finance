@@ -245,10 +245,15 @@ export function setToPay(inv, val) { inv.toPay = !!val; save(); }
 export function toggleToPay(inv) { inv.toPay = !inv.toPay; save(); }
 export function flagMany(invs, val) { invs.forEach(i => { i.toPay = !!val; }); save(); }
 
+// marca un movimento con l'origine SEPA (per l'abbinamento in fase di import estratto conto):
+// sepaFileId = id del file bonifici; sepaBooking = 'batch' (addebito unico cumulativo) | 'single'.
+function markSepa(tx, sepa) { if (sepa && sepa.fileId) { tx.sepaFileId = sepa.fileId; tx.sepaBooking = sepa.booking || 'single'; } }
+
 // ============ Saldo multiplo ============
 // items: fatture da saldare a residuo intero. mode: 'cumulative' (un solo movimento) | 'separate'.
-// Il movimento si crea solo se accountId è valorizzato.
-export function batchSettle(invoices, { date, accountId = null, mode = 'separate' } = {}) {
+// Il movimento si crea solo se accountId è valorizzato. `sepa` (opzionale) marca i movimenti
+// generati con l'origine del file bonifici, così l'import estratto conto li riabbina.
+export function batchSettle(invoices, { date, accountId = null, mode = 'separate', sepa = null } = {}) {
   date = date || todayStr();
   const items = invoices.filter(i => invResiduo(i) > 0.005);
   if (!items.length) return { paid: 0 };
@@ -260,6 +265,7 @@ export function batchSettle(invoices, { date, accountId = null, mode = 'separate
       categoryId: 'c-for', accountId, supplierId: items[0].supplierId || null,
       date, note: settleLabel(items[0], items.length)
     };
+    markSepa(tx, sepa);
     data.transactions.push(tx);
     items.forEach(i => {
       const amt = invResiduo(i);
@@ -277,6 +283,7 @@ export function batchSettle(invoices, { date, accountId = null, mode = 'separate
           categoryId: i.categoryId || 'c-for', accountId, supplierId: i.supplierId || null,
           date, note: invMoveLabel(i)
         };
+        markSepa(tx, sepa);
         data.transactions.push(tx); pay.txId = tx.id;
       }
       i.payments = invPayments(i).concat(pay);
@@ -291,14 +298,14 @@ export function batchSettle(invoices, { date, accountId = null, mode = 'separate
 // ============ Saldo multiplo CON note di credito ============
 // Salda le fatture del fornitore scalando le NDC selezionate: il movimento di cassa è il NETTO
 // (fatture − note di credito). Le fatture vanno a "pagata", le NDC a "usata".
-export function applyBatch(items, { date, accountId = null, mode = 'cumulative' } = {}) {
+export function applyBatch(items, { date, accountId = null, mode = 'cumulative', sepa = null } = {}) {
   date = date || todayStr();
   const invs = items.filter(i => !isCreditNote(i) && invResiduo(i) > 0.005);
   const cns = items.filter(i => isCreditNote(i) && invResiduo(i) > 0.005);
   if (!invs.length && !cns.length) return { paid: 0, used: 0, net: 0 };
 
   // nessuna NDC → comportamento standard (cumulativo o separato)
-  if (!cns.length) return { ...batchSettle(invs, { date, accountId, mode }), used: 0, net: round2(invs.reduce((s, i) => s + invResiduo(i), 0)) };
+  if (!cns.length) return { ...batchSettle(invs, { date, accountId, mode, sepa }), used: 0, net: round2(invs.reduce((s, i) => s + invResiduo(i), 0)) };
 
   const gross = round2(invs.reduce((s, i) => s + invResiduo(i), 0));
   const creditAvail = round2(cns.reduce((s, c) => s + invResiduo(c), 0));
@@ -315,6 +322,7 @@ export function applyBatch(items, { date, accountId = null, mode = 'cumulative' 
       categoryId: 'c-for', accountId, supplierId: ref.supplierId || null,
       date, note: `${settleLabel(ref, invs.length)} (netto NDC)`, batchId
     };
+    markSepa(tx, sepa);
     data.transactions.push(tx);
     cashTxId = tx.id;
   }
