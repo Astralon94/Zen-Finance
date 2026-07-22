@@ -19,7 +19,6 @@ import * as pnl from './views/pnl.js';
 import * as anag from './views/anagrafiche.js';
 import * as attivita from './views/attivita.js';
 import * as settings from './views/impostazioni.js';
-import * as utenti from './views/utenti.js';
 import { openSearch, canSearch } from './search.js';
 
 const VIEWS = {
@@ -32,10 +31,9 @@ const VIEWS = {
   pnl: { mod: pnl, title: 'Conto economico', icon: '📊' },
   anag: { mod: anag, title: 'Anagrafiche', icon: '👤' },
   attivita: { mod: attivita, title: 'Attività', icon: '🕘' },
-  set: { mod: settings, title: 'Impostazioni', icon: '⚙' },
-  utenti: { mod: utenti, title: 'Utenti', icon: '👥' }
+  set: { mod: settings, title: 'Impostazioni', icon: '⚙' }
 };
-const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'attivita', 'utenti', 'set'];
+const ORDER = ['dash', 'mov', 'fatt', 'f24', 'prog', 'fin', 'pnl', 'anag', 'attivita', 'set'];
 
 let current = 'dash';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -47,7 +45,9 @@ export function applyTheme() {
 }
 mql.addEventListener('change', applyTheme);
 
-export function go(view) { current = view; renderApp(); window.scrollTo(0, 0); }
+// La gestione utenti è stata assorbita nella vista Impostazioni: se qualcuno
+// arriva ancora a 'utenti' (stato salvato o link interno) ripieghiamo su 'set'.
+export function go(view) { current = view === 'utenti' ? 'set' : view; renderApp(); window.scrollTo(0, 0); }
 
 // ---- Gating della navigazione (Fase 3) ----
 // Le voci visibili = quelle di ORDER accessibili all'utente secondo il registro

@@ -1,6 +1,8 @@
-// ============ Vista Utenti (gestione accessi e permessi) ============
-// Riservata a chi ha `utenti.manage` (gate di nav in app.js + guardia backend).
-// I dati arrivano dagli endpoint /api/utenti; il registro permessi/ruoli da meta.
+// ============ Gestione utenti (accessi e permessi) ============
+// Non è più una vista di nav a sé: è montata come sezione dentro Impostazioni
+// (src/ui/views/impostazioni.js). Riservata a chi ha `utenti.manage`
+// (gate in Impostazioni + guardia backend). I dati arrivano dagli endpoint
+// /api/utenti; il registro permessi/ruoli da meta.
 import { esc } from '../../domain/util.js';
 import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
 import { meta, user, can, listUsers, createUser, updateUser, deleteUser } from '../../state/auth.js';
@@ -11,10 +13,9 @@ let rootEl = null;
 const permLabel = k => (meta?.permessi || []).find(p => p.key === k)?.label || k;
 
 export function render() {
-  let h = `<div class="pagehead"><h1>Utenti</h1><span class="sub">accessi e permessi</span></div>`;
-  // Difesa a valle del gating di nav: senza `utenti.manage` non si mostra nulla.
-  if (!can('utenti.manage')) return h + `<div class="card empty">Sezione riservata agli amministratori.</div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuovo utente</button></div>`;
+  // Difesa a valle del gating in Impostazioni: senza `utenti.manage` niente.
+  if (!can('utenti.manage')) return `<div class="card empty">Sezione riservata agli amministratori.</div>`;
+  let h = `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuovo utente</button></div>`;
   if (usersCache === null) return h + `<div class="card empty">Caricamento…</div>`;
   if (!usersCache.length) return h + `<div class="card empty">Nessun utente.</div>`;
   h += usersCache.map(userRow).join('');

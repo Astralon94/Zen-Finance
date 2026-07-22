@@ -7,6 +7,7 @@ import { backfillMatchNames } from '../../domain/backfill.js';
 import { mgmtState, deleteInvoice, supNameOf, invTotal, statusLabelOf, isCreditNote } from '../../domain/invoices.js';
 import { co } from '../../domain/finance.js';
 import { applyTheme } from '../app.js';
+import * as utenti from './utenti.js';
 
 export function render() {
   const cManage = can('impostazioni.manage');   // aspetto, manutenzione
@@ -15,6 +16,7 @@ export function render() {
   const cImport = can('dati.import');            // importa/sostituisci
   const cReset = can('dati.reset');              // azzera dati (zona pericolosa)
   const cFatt = can('fatture.elimina');          // elimina fattura
+  const cUtenti = can('utenti.manage');          // gestione utenti (accessi)
   const t = data.settings.theme || 'auto';
   const opt = (v, l) => `<button class="chip ${t === v ? 'on' : ''}" data-th="${v}">${l}</button>`;
   let h = `<div class="pagehead"><h1>Impostazioni</h1></div>`;
@@ -90,6 +92,12 @@ export function render() {
     </div>`;
   }
 
+  if (cUtenti) {
+    any = true;
+    h += `<div class="section-title">👥 Utenti</div>`;
+    h += `<div id="utenti_sec">${utenti.render()}</div>`;
+  }
+
   if (cReset) {
     any = true;
     h += `<div class="section-title">Zona pericolosa</div>`;
@@ -103,6 +111,11 @@ export function render() {
 }
 
 export function bind(root) {
+  // Sezione Utenti: la gestione vive in utenti.js (rendering + bind autonomi sul
+  // proprio contenitore, così il redraw interno resta confinato a #utenti_sec).
+  const utentiSec = root.querySelector('#utenti_sec');
+  if (utentiSec && can('utenti.manage')) utenti.bind(utentiSec);
+
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');
