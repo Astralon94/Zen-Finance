@@ -1,6 +1,14 @@
-// ============ Autenticazione — hashing password (scrypt) + sessioni in memoria ============
-// Nessuna dipendenza esterna (solo node:crypto). Derivato dal modello di Zen-Store.
+// ============ Autenticazione — hashing password (scrypt) + sessioni persistenti ============
+// Nessuna dipendenza esterna (solo node:crypto/node:fs/node:path). Derivato dal modello
+// di Zen-Store. Le sessioni sono PERSISTENTI su file (data/sessions.json, accanto al DB)
+// con scadenza SCORREVOLE per inattività: sopravvivono a riavvii e aggiornamenti del
+// server (l'updater non tocca data/, che non è nemmeno versionata). File mancante o
+// corrotto → si riparte senza sessioni, senza errori. Con DB in memoria (test) non si
+// persiste su disco: le sessioni restano solo in RAM.
 import { scryptSync, randomBytes, timingSafeEqual, randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { DB_PATH } from './db.js';
 
 export function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
@@ -16,26 +24,88 @@ export function verifyPassword(password, stored) {
   return calc.length === known.length && timingSafeEqual(calc, known);
 }
 
-// Sessioni in memoria: token -> { userId, creata }.
-// Nota: sono volatili — un riavvio del server (anche dopo un aggiornamento) le azzera
-// e richiede un nuovo login. Va bene per un'app locale su un solo Mac.
+// ---- Sessioni: token -> { userId, creata, lastSeen } ----
+// Fonte di verità in RAM; il file sessions.json ne è la copia durevole. Scadenza
+// SCORREVOLE: ogni accesso valido rinnova lastSeen; oltre IDLE_TTL_MS di inattività la
+// sessione è scaduta. Il file si riscrive SEMPRE su creazione/distruzione; il rinnovo di
+// lastSeen è THROTTLED (al più una scrittura ogni PERSIST_THROTTLE_MS) per non toccare il
+// disco a ogni richiesta.
+const IDLE_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 giorni di inattività
+const PERSIST_THROTTLE_MS = 1000 * 60 * 5;    // rinnovo lastSeen: riscrivi al più ogni 5 min
+// Percorso del file sessioni: accanto al DB (in data/). DB in memoria → nessuna persistenza.
+const SESSIONS_PATH = DB_PATH === ':memory:' ? null : join(dirname(DB_PATH), 'sessions.json');
+
 const sessions = new Map();
-const TTL_MS = 1000 * 60 * 60 * 12; // 12 ore
+
+// Rimuove le sessioni scadute per inattività. Ritorna true se ha cambiato qualcosa.
+function pruneExpired(now = Date.now()) {
+  let changed = false;
+  for (const [t, s] of sessions) {
+    if (now - (s.lastSeen ?? s.creata ?? 0) > IDLE_TTL_MS) { sessions.delete(t); changed = true; }
+  }
+  return changed;
+}
+
+// Scrittura ATOMICA: file temporaneo + rename (stesso filesystem). Errori ignorati:
+// la persistenza non deve mai far cadere una richiesta.
+function persist() {
+  if (!SESSIONS_PATH) return;
+  const obj = { v: 1, sessions: Object.fromEntries(sessions) };
+  const tmp = `${SESSIONS_PATH}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(obj));
+    renameSync(tmp, SESSIONS_PATH);
+  } catch {}
+}
+
+// Carica il file all'avvio del modulo. Tollerante: mancante/corrotto → vuoti; ignora
+// record malformati; accetta campi extra futuri. Pulisce le scadute e, se necessario,
+// riscrive il file già ripulito.
+function load() {
+  if (!SESSIONS_PATH) return;
+  let raw;
+  try { raw = readFileSync(SESSIONS_PATH, 'utf8'); } catch { return; } // file assente → si parte vuoti
+  try {
+    const obj = JSON.parse(raw);
+    const map = obj && typeof obj === 'object' ? obj.sessions : null;
+    if (map && typeof map === 'object') {
+      for (const [t, s] of Object.entries(map)) {
+        if (s && typeof s === 'object' && s.userId != null) {
+          const creata = s.creata ?? Date.now();
+          sessions.set(t, { userId: s.userId, creata, lastSeen: s.lastSeen ?? creata });
+        }
+      }
+    }
+  } catch {} // JSON corrotto → si riparte vuoti
+  if (pruneExpired()) persist();
+}
+load();
 
 export function createSession(userId) {
   const token = randomUUID();
-  sessions.set(token, { userId, creata: Date.now() });
+  const now = Date.now();
+  sessions.set(token, { userId, creata: now, lastSeen: now });
+  persist();
   return token;
 }
 
 export function getSession(token) {
   const s = sessions.get(token);
   if (!s) return null;
-  if (Date.now() - s.creata > TTL_MS) { sessions.delete(token); return null; }
+  const now = Date.now();
+  const last = s.lastSeen ?? s.creata ?? 0;
+  if (now - last > IDLE_TTL_MS) { sessions.delete(token); persist(); return null; }
+  // Rinnovo scorrevole. Avanza lastSeen (e persiste) solo oltre la soglia di throttle:
+  // così una sessione attiva si mantiene viva senza scrivere su disco a ogni richiesta.
+  if (now - last > PERSIST_THROTTLE_MS) { s.lastSeen = now; persist(); }
   return s;
 }
 
-export function destroySession(token) { sessions.delete(token); }
+export function destroySession(token) {
+  if (sessions.delete(token)) persist();
+}
 export function destroySessionsOfUser(userId) {
-  for (const [t, s] of sessions) if (s.userId === userId) sessions.delete(t);
+  let changed = false;
+  for (const [t, s] of sessions) if (s.userId === userId) { sessions.delete(t); changed = true; }
+  if (changed) persist();
 }
